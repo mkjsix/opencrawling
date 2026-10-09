@@ -162,6 +162,7 @@ services:
     image: opencrawling/oc-crawler:latest
     container_name: oc-crawler-service
     environment:
+      - SPRING_OPENCRAWLING_CLAIM_CHECK_LOCAL_DIR=/data/claims
       - SPRING_KAFKA_BOOTSTRAP_SERVERS=kafka:9094
       - SPRING_OPENCRAWLING_CRAWL_ON_STARTUP=true
       - SPRING_OPENCRAWLING_SCAN_PATH=/data
@@ -185,6 +186,7 @@ services:
     image: opencrawling/oc-ingestion-consumer:latest
     container_name: oc-ingestion-consumer-service
     environment:
+      - SPRING_OPENCRAWLING_CLAIM_CHECK_LOCAL_DIR=/data/claims
       - SPRING_KAFKA_BOOTSTRAP_SERVERS=kafka:9094
       - SPRING_AI_VECTORSTORE_PGVECTOR_URL=jdbc:postgresql://postgres:5432/opencrawling
       - SPRING_AI_VECTORSTORE_PGVECTOR_USERNAME=opencrawling
@@ -261,6 +263,10 @@ services:
       - OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://otel-collector:4318/v1/traces
       - OPENCRAWLING_OBSERVABILITY_ENABLED=true
       - OPENCRAWLING_OBSERVABILITY_SAMPLING_PROBABILITY=1.0
+      - SPRING_OPENCRAWLING_CLAIM_CHECK_LOCAL_DIR=/data/claims
+      - OPENCRAWLING_INGEST_OIS_TOKEN=${OPENCRAWLING_INGEST_OIS_TOKEN:-}
+    volumes:
+      - ./oc-runtime/data:/data  # Shares local claim check files with oc-ingestion-consumer
     depends_on:
       - postgres
       - redis
