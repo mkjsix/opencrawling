@@ -15,6 +15,8 @@
  */
 package org.opencrawling.embedding.config;
 
+import org.apache.kafka.clients.admin.AdminClientConfig;
+import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.common.serialization.StringDeserializer;
@@ -24,9 +26,11 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.kafka.annotation.EnableKafka;
 import org.springframework.kafka.config.ConcurrentKafkaListenerContainerFactory;
+import org.springframework.kafka.config.TopicBuilder;
 import org.springframework.kafka.core.ConsumerFactory;
 import org.springframework.kafka.core.DefaultKafkaConsumerFactory;
 import org.springframework.kafka.core.DefaultKafkaProducerFactory;
+import org.springframework.kafka.core.KafkaAdmin;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.core.ProducerFactory;
 import org.springframework.kafka.support.serializer.JacksonJsonDeserializer;
@@ -47,6 +51,37 @@ public class KafkaConfig {
 
     @Value("${spring.kafka.consumer.group-id:opencrawling-embedding-group}")
     private String groupId;
+
+    /**
+     * Creates the topics declared below, or grows them to the declared partition count, before the listener
+     * starts. Startup fails while the broker is unreachable.
+     */
+    @Bean
+    public KafkaAdmin kafkaAdmin() {
+        Map<String, Object> configs = new HashMap<>();
+        configs.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
+        KafkaAdmin admin = new KafkaAdmin(configs);
+        admin.setFatalIfBrokerNotAvailable(true);
+        return admin;
+    }
+
+    /** The topic this service consumes, with the partition count oc-runtime declares for it. */
+    @Bean
+    public NewTopic opencrawlingChunksTopic() {
+        return TopicBuilder.name(CHUNKS_TOPIC_NAME)
+                .partitions(3)
+                .replicas(1)
+                .build();
+    }
+
+    /** The topic this service produces, with the partition count oc-runtime declares for it. */
+    @Bean
+    public NewTopic opencrawlingEmbeddedTopic() {
+        return TopicBuilder.name(EMBEDDED_TOPIC_NAME)
+                .partitions(3)
+                .replicas(1)
+                .build();
+    }
 
     @Bean
     public ProducerFactory<String, Object> producerFactory() {
