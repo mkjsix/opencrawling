@@ -94,9 +94,6 @@ services:
       KAFKA_LOG_DIRS: '/var/lib/kafka/data'
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
-      # Auto-created topics get the 3 partitions KafkaConfig declares, so the runtime never
-      # grows a topic that consumers in other containers already joined with 1 partition.
-      KAFKA_NUM_PARTITIONS: "3"
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
     ports:
       - "9092:9092"
