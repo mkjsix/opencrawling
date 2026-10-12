@@ -70,8 +70,8 @@ public class KafkaConfig {
         Map<String, Object> configs = new HashMap<>();
         configs.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
         KafkaAdmin admin = new KafkaAdmin(configs);
-        // Listeners must not subscribe to auto-created topics before their partition counts are set.
-        admin.setFatalIfBrokerNotAvailable(true);
+        // Don't fail startup if the broker isn't reachable yet (the broker then auto-creates topics with its defaults).
+        admin.setFatalIfBrokerNotAvailable(false);
         return admin;
     }
 

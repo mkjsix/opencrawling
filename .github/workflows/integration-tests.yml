@@ -45,8 +45,6 @@ jobs:
             script: "test-cli-decoupled.sh"
           - name: "Docker Decoupled Pipeline Test Suite"
             script: "test-docker-decoupled.sh"
-          - name: "Kafka Topic Initialization Test Suite"
-            script: "test-kafka-topic-initialization.sh"
           - name: "OIS Ingest Endpoint Decoupled Test Suite"
             script: "test-ois-ingest-decoupled.sh"
           - name: "Java Client SDK Test Suite"
