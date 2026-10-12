@@ -64,6 +64,10 @@ OpenCrawling uses a Service Provider Interface (SPI) structure. To run a job, yo
 
 ## 📈 Horizon Scaling of Consumers
 
+The runtime and embedding service initialize their Kafka topics before starting listeners. Both fail startup if Kafka is unavailable or topic initialization fails; this prevents consumers from subscribing before a topic is expanded to its required partition count. Start Kafka first. The decoupled consumer containers retry through `restart: unless-stopped`; a one-shot crawler or a process run directly must be started again after Kafka recovers.
+
+The runtime declares `opencrawling-documents` with `spring.opencrawling.kafka.topic.partitions` (default `3`). Both services declare `opencrawling-chunks` and `opencrawling-embedded` with at least three partitions. Existing topics with fewer partitions are expanded; larger topics are left unchanged. Partition growth cannot be undone by reverting the application configuration.
+
 For high ingestion jobs, adjust Kafka topic partition numbers:
 *   Configure the `opencrawling-chunks` and `opencrawling-embedded` topics with 4 to 8 partitions.
 *   Run multiple instances of `oc-embedding-service` in the same consumer group. Kafka will distribute chunk embedding calculations evenly across instances.
