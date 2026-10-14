@@ -198,6 +198,7 @@ services:
       - SPRING_AI_VECTORSTORE_PGVECTOR_PASSWORD=opencrawling_password
       - SPRING_MAIN_WEB_APPLICATION_TYPE=none
       - SPRING_OPENCRAWLING_CLAIM_CHECK_STORE=${SPRING_OPENCRAWLING_CLAIM_CHECK_STORE:-local}
+      - SPRING_OPENCRAWLING_CLAIM_CHECK_LOCAL_DIR=/claims
       # Ozone claim-check transport: NATIVE (default, Ozone RPC to the OM + datanodes) or S3 (S3 Gateway HTTP).
       - SPRING_OPENCRAWLING_CLAIM_CHECK_OZONE_CLIENT_TYPE=${SPRING_OPENCRAWLING_CLAIM_CHECK_OZONE_CLIENT_TYPE:-NATIVE}
       - SPRING_OPENCRAWLING_CLAIM_CHECK_OZONE_OM_HOST=om
@@ -212,6 +213,7 @@ services:
       - OPENCRAWLING_OBSERVABILITY_SAMPLING_PROBABILITY=1.0
     volumes:
       - ./oc-runtime/data:/data  # Mount sample files directory
+      - opencrawling-claims:/claims
     depends_on:
       - kafka
       - postgres
@@ -234,6 +236,7 @@ services:
       - SPRING_AI_VECTORSTORE_PGVECTOR_USERNAME=opencrawling
       - SPRING_AI_VECTORSTORE_PGVECTOR_PASSWORD=opencrawling_password
       - SPRING_OPENCRAWLING_CLAIM_CHECK_STORE=${SPRING_OPENCRAWLING_CLAIM_CHECK_STORE:-local}
+      - SPRING_OPENCRAWLING_CLAIM_CHECK_LOCAL_DIR=/claims
       # Ozone claim-check transport: NATIVE (default, Ozone RPC to the OM + datanodes) or S3 (S3 Gateway HTTP).
       - SPRING_OPENCRAWLING_CLAIM_CHECK_OZONE_CLIENT_TYPE=${SPRING_OPENCRAWLING_CLAIM_CHECK_OZONE_CLIENT_TYPE:-NATIVE}
       - SPRING_OPENCRAWLING_CLAIM_CHECK_OZONE_OM_HOST=om
@@ -247,6 +250,7 @@ services:
       - OPENCRAWLING_TIKA_JVM_ARGS=-Xmx512m
     volumes:
       - ./oc-runtime/data:/data  # Needs access to resolve local claim check file URIs
+      - opencrawling-claims:/claims
     depends_on:
       - kafka
       - postgres
@@ -332,6 +336,16 @@ services:
       - OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://otel-collector:4318/v1/traces
       - OPENCRAWLING_OBSERVABILITY_ENABLED=true
       - OPENCRAWLING_OBSERVABILITY_SAMPLING_PROBABILITY=1.0
+      - SPRING_OPENCRAWLING_CLAIM_CHECK_STORE=${SPRING_OPENCRAWLING_CLAIM_CHECK_STORE:-local}
+      # Ozone claim-check transport: NATIVE (default, Ozone RPC to the OM + datanodes) or S3 (S3 Gateway HTTP).
+      - SPRING_OPENCRAWLING_CLAIM_CHECK_OZONE_CLIENT_TYPE=${SPRING_OPENCRAWLING_CLAIM_CHECK_OZONE_CLIENT_TYPE:-NATIVE}
+      - SPRING_OPENCRAWLING_CLAIM_CHECK_OZONE_OM_HOST=om
+      - SPRING_OPENCRAWLING_CLAIM_CHECK_OZONE_OM_PORT=9862
+      - SPRING_OPENCRAWLING_CLAIM_CHECK_OZONE_S3_ENDPOINT=http://s3g:9878
+      - SPRING_OPENCRAWLING_CLAIM_CHECK_LOCAL_DIR=/claims
+      - OPENCRAWLING_INGEST_OIS_TOKEN=${OPENCRAWLING_INGEST_OIS_TOKEN:-}
+    volumes:
+      - opencrawling-claims:/claims  # Local claim check files, shared with oc-ingestion-consumer
     depends_on:
       - postgres
       - redis
@@ -369,3 +383,5 @@ volumes:
     name: opencrawling-ollamadata
   opencrawling-kafkadata:
     name: opencrawling-kafkadata
+  opencrawling-claims:
+    name: opencrawling-claims
