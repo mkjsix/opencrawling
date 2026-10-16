@@ -45,6 +45,8 @@ jobs:
             script: "test-cli-decoupled.sh"
           - name: "Docker Decoupled Pipeline Test Suite"
             script: "test-docker-decoupled.sh"
+          - name: "OIS Ingest Endpoint Decoupled Test Suite"
+            script: "test-ois-ingest-decoupled.sh"
           - name: "Java Client SDK Test Suite"
             script: "test-java-client-sdk.sh"
           - name: "Java Client SDK Decoupled Test Suite"
