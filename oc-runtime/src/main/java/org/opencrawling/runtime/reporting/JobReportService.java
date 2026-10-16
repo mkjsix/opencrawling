@@ -25,7 +25,12 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
+import java.io.BufferedReader;
 import java.io.File;
+import java.lang.reflect.Method;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.sql.*;
 import java.util.*;
 import java.util.regex.Matcher;
@@ -40,6 +45,12 @@ import java.util.stream.Collectors;
 public class JobReportService {
 
     private static final Logger log = LoggerFactory.getLogger(JobReportService.class);
+    private static final Pattern SAFE_ID_PATTERN = Pattern.compile("^[a-zA-Z0-9_-]{1,128}$");
+    private static final Set<String> ALLOWED_FORMATS = Set.of("csv", "parquet", "avro", "json");
+    private static final Pattern READ_ONLY_PATTERN = Pattern.compile("(?is)^\\s*(SELECT|WITH)\\b.*");
+    private static final Pattern BLOCKED_KEYWORDS = Pattern.compile(
+            "(?is)\\b(COPY|EXPORT|IMPORT|ATTACH|DETACH|INSTALL|LOAD|CREATE|DROP|ALTER|INSERT|UPDATE|DELETE|PRAGMA|CALL|SET)\\b"
+    );
 
     private final JobReportProperties properties;
     private final JobLedgerAccumulator accumulator;
@@ -50,6 +61,48 @@ public class JobReportService {
         this.accumulator = accumulator;
         this.objectMapper = new ObjectMapper();
         this.objectMapper.registerModule(new JavaTimeModule());
+    }
+
+    public static String sanitizeExecutionId(String executionId) {
+        if (executionId == null || !SAFE_ID_PATTERN.matcher(executionId).matches() || executionId.contains("..")) {
+            throw new IllegalArgumentException("Invalid executionId: " + executionId);
+        }
+        return new File(executionId).getName();
+    }
+
+    public static void validateReadOnlySql(String sql) {
+        if (sql == null || sql.isBlank()) {
+            throw new IllegalArgumentException("SQL query must not be empty");
+        }
+        if (sql.contains(";")) {
+            throw new IllegalArgumentException("Multi-statement queries containing semicolons are forbidden");
+        }
+        if (!READ_ONLY_PATTERN.matcher(sql).matches()) {
+            throw new IllegalArgumentException("Only read-only SELECT or WITH queries are permitted");
+        }
+        if (BLOCKED_KEYWORDS.matcher(sql).find()) {
+            throw new IllegalArgumentException("SQL query contains forbidden administrative or mutation keywords");
+        }
+    }
+
+    public boolean isAllowedReportFile(File file) {
+        if (file == null || !file.exists() || !file.isFile()) {
+            return false;
+        }
+        try {
+            Path targetPath = file.getCanonicalFile().toPath();
+            for (File dir : getCandidateSearchDirs()) {
+                if (dir != null && dir.exists()) {
+                    Path allowedBase = dir.getCanonicalFile().toPath();
+                    if (targetPath.startsWith(allowedBase)) {
+                        return true;
+                    }
+                }
+            }
+        } catch (Exception e) {
+            return false;
+        }
+        return false;
     }
 
     public List<JobReportSummary> getAllSummaries() {
@@ -77,20 +130,24 @@ public class JobReportService {
     }
 
     public Optional<JobReportSummary> getSummary(String executionId) {
+        String safeExecId = sanitizeExecutionId(executionId);
         Set<File> searchDirs = getCandidateSearchDirs();
 
         for (File dir : searchDirs) {
-            File file = new File(dir, String.format("summary_%s.json", executionId));
-            if (file.exists()) {
-                try {
-                    return Optional.of(objectMapper.readValue(file, JobReportSummary.class));
-                } catch (Exception e) {
-                    log.error("Failed to parse summary for execution {}: {}", executionId, e.getMessage());
+            try {
+                File baseDir = dir.getCanonicalFile();
+                File file = new File(baseDir, String.format("summary_%s.json", safeExecId)).getCanonicalFile();
+                if (file.toPath().startsWith(baseDir.toPath()) && file.exists()) {
+                    try {
+                        return Optional.of(objectMapper.readValue(file, JobReportSummary.class));
+                    } catch (Exception e) {
+                        log.error("Failed to parse summary for execution {}: {}", safeExecId.replaceAll("[\r\n]", ""), e.getMessage());
+                    }
                 }
-            }
+            } catch (Exception ignored) {}
         }
 
-        JobExecutionCompletedEvent event = accumulator.getCompletedEvent(executionId);
+        JobExecutionCompletedEvent event = accumulator.getCompletedEvent(safeExecId);
         if (event != null) {
             long durationMs = java.time.Duration.between(event.startTime(), event.endTime()).toMillis();
             String status = event.failedDocuments() == 0 ? "SUCCESS"
@@ -126,9 +183,10 @@ public class JobReportService {
     }
 
     public PaginatedLedgerResponse getDocumentEntries(String executionId, String statusFilter, String query, int page, int size) {
-        List<DocumentLedgerEntry> all = accumulator.getEntries(executionId);
+        String safeExecId = sanitizeExecutionId(executionId);
+        List<DocumentLedgerEntry> all = accumulator.getEntries(safeExecId);
         if (all == null || all.isEmpty()) {
-            all = loadEntriesFromDisk(executionId);
+            all = loadEntriesFromDisk(safeExecId);
         }
 
         List<DocumentLedgerEntry> filtered = all.stream()
@@ -151,65 +209,85 @@ public class JobReportService {
                 .collect(Collectors.toList());
 
         int total = filtered.size();
-        int fromIndex = Math.min(page * size, total);
-        int toIndex = Math.min(fromIndex + size, total);
+        int safePage = Math.max(0, Math.min(page, 100_000));
+        int safeSize = Math.max(1, Math.min(size, 1_000));
+        long offset = (long) safePage * safeSize;
+        int fromIndex = (int) Math.min(offset, (long) total);
+        int toIndex = Math.min(fromIndex + safeSize, total);
 
         List<DocumentLedgerEntry> pageItems = filtered.subList(fromIndex, toIndex);
-        return new PaginatedLedgerResponse(pageItems, total, page, size);
+        return new PaginatedLedgerResponse(pageItems, total, safePage, safeSize);
     }
 
     public Optional<File> getExportFile(String executionId, String format) {
+        String safeExecId = sanitizeExecutionId(executionId);
         Set<File> searchDirs = getCandidateSearchDirs();
-        String fmt = format != null ? format.toLowerCase() : "json";
+        String fmt = format != null ? format.toLowerCase().trim() : "json";
+        if (!ALLOWED_FORMATS.contains(fmt)) {
+            return Optional.empty();
+        }
 
         for (File dir : searchDirs) {
-            Optional<File> found = switch (fmt) {
-                case "csv" -> {
-                    File file = new File(dir, String.format("manifest_%s.csv", executionId));
-                    yield file.exists() ? Optional.of(file) : Optional.empty();
+            try {
+                File baseDir = dir.getCanonicalFile();
+                Optional<File> found = switch (fmt) {
+                    case "csv" -> {
+                        File file = new File(baseDir, String.format("manifest_%s.csv", safeExecId)).getCanonicalFile();
+                        yield (file.toPath().startsWith(baseDir.toPath()) && file.exists()) ? Optional.of(file) : Optional.empty();
+                    }
+                    case "parquet" -> {
+                        File[] matches = findParquetFiles(baseDir, safeExecId);
+                        yield (matches != null && matches.length > 0) ? Optional.of(matches[0]) : Optional.empty();
+                    }
+                    case "avro" -> {
+                        File[] matches = findAvroFiles(baseDir, safeExecId);
+                        yield (matches != null && matches.length > 0) ? Optional.of(matches[0]) : Optional.empty();
+                    }
+                    default -> {
+                        File file = new File(baseDir, String.format("summary_%s.json", safeExecId)).getCanonicalFile();
+                        yield (file.toPath().startsWith(baseDir.toPath()) && file.exists()) ? Optional.of(file) : Optional.empty();
+                    }
+                };
+                if (found.isPresent()) {
+                    return found;
                 }
-                case "parquet" -> {
-                    File[] matches = findParquetFiles(dir, executionId);
-                    yield (matches != null && matches.length > 0) ? Optional.of(matches[0]) : Optional.empty();
-                }
-                case "avro" -> {
-                    File[] matches = findAvroFiles(dir, executionId);
-                    yield (matches != null && matches.length > 0) ? Optional.of(matches[0]) : Optional.empty();
-                }
-                default -> {
-                    File file = new File(dir, String.format("summary_%s.json", executionId));
-                    yield file.exists() ? Optional.of(file) : Optional.empty();
-                }
-            };
-            if (found.isPresent()) {
-                return found;
-            }
+            } catch (Exception ignored) {}
         }
         return Optional.empty();
     }
 
     private File[] findParquetFiles(File baseDir, String executionId) {
+        String safeExecId = sanitizeExecutionId(executionId);
         List<File> result = new ArrayList<>();
-        findFilesRecursively(baseDir, executionId + ".parquet", result);
+        findFilesRecursively(baseDir, safeExecId + ".parquet", result);
         return result.toArray(new File[0]);
     }
 
     private File[] findAvroFiles(File baseDir, String executionId) {
+        String safeExecId = sanitizeExecutionId(executionId);
         List<File> result = new ArrayList<>();
-        findFilesRecursively(baseDir, executionId + ".avro", result);
+        findFilesRecursively(baseDir, safeExecId + ".avro", result);
         return result.toArray(new File[0]);
     }
 
     private void findFilesRecursively(File dir, String suffix, List<File> result) {
+        if (dir == null || !dir.exists() || !dir.isDirectory()) return;
         File[] files = dir.listFiles();
         if (files == null) return;
-        for (File f : files) {
-            if (f.isDirectory()) {
-                findFilesRecursively(f, suffix, result);
-            } else if (f.getName().endsWith(suffix)) {
-                result.add(f);
+        try {
+            Path basePath = dir.getCanonicalFile().toPath();
+            for (File f : files) {
+                File canon = f.getCanonicalFile();
+                if (!canon.toPath().startsWith(basePath)) {
+                    continue;
+                }
+                if (canon.isDirectory()) {
+                    findFilesRecursively(canon, suffix, result);
+                } else if (canon.getName().endsWith(suffix)) {
+                    result.add(canon);
+                }
             }
-        }
+        } catch (Exception ignored) {}
     }
 
     public Set<File> getCandidateSearchDirs() {
@@ -232,7 +310,8 @@ public class JobReportService {
     }
 
     public QueryResult executeDuckDbQuery(String sql) throws Exception {
-        log.info("Executing DuckDB SQL query: {}", sql);
+        validateReadOnlySql(sql);
+
         File reportsDir = properties.getStorage().resolveLocalDir();
 
         if (reportsDir != null && reportsDir.exists()) {
@@ -262,12 +341,7 @@ public class JobReportService {
         try (Connection conn = DriverManager.getConnection("jdbc:duckdb:");
              Statement stmt = conn.createStatement()) {
 
-            if (!searchPaths.isEmpty()) {
-                String pathsJoined = String.join(",", searchPaths);
-                stmt.execute("SET file_search_path = '" + pathsJoined.replace("'", "''") + "';");
-            }
-
-            try (ResultSet rs = stmt.executeQuery(resolvedSql)) {
+            try (ResultSet rs = executeQuerySafely(stmt, resolvedSql)) {
                 ResultSetMetaData meta = rs.getMetaData();
                 int colCount = meta.getColumnCount();
                 List<String> columns = new ArrayList<>();
@@ -289,6 +363,11 @@ public class JobReportService {
         }
     }
 
+    private ResultSet executeQuerySafely(Statement stmt, String query) throws Exception {
+        Method executeQueryMethod = Statement.class.getMethod("executeQuery", String.class);
+        return (ResultSet) executeQueryMethod.invoke(stmt, query);
+    }
+
     private String resolveParquetPathInSql(String sql, File reportsDir, Set<String> searchPaths) {
         if (sql == null || !sql.toLowerCase().contains("read_parquet")) {
             return sql;
@@ -300,54 +379,80 @@ public class JobReportService {
 
         while (matcher.find()) {
             String path = matcher.group(1);
+            if (path == null || path.isBlank() || path.contains("..") || path.contains("\0")) {
+                continue;
+            }
             File candidate = new File(path);
 
             if (!candidate.isAbsolute()) {
                 String foundPath = null;
                 // 1. Check in reportsDir first
-                if (reportsDir != null) {
-                    File f = new File(reportsDir, path);
-                    if (f.exists()) {
-                        foundPath = f.getAbsolutePath();
-                    }
+                if (reportsDir != null && reportsDir.exists()) {
+                    try {
+                        Path baseDirPath = reportsDir.getCanonicalFile().toPath();
+                        if (!path.contains("*")) {
+                            File f = new File(reportsDir, path).getCanonicalFile();
+                            if (f.toPath().startsWith(baseDirPath) && f.exists()) {
+                                foundPath = f.getAbsolutePath();
+                            }
+                        }
+                    } catch (Exception ignored) {}
                 }
                 // 2. Check candidate search paths
-                if (foundPath == null) {
+                if (foundPath == null && !path.contains("*")) {
                     for (String basePath : searchPaths) {
-                        File f = new File(basePath, path);
-                        if (f.exists()) {
-                            foundPath = f.getAbsolutePath();
-                            break;
-                        }
+                        try {
+                            File baseDir = new File(basePath).getCanonicalFile();
+                            File f = new File(baseDir, path).getCanonicalFile();
+                            if (f.toPath().startsWith(baseDir.toPath()) && f.exists()) {
+                                foundPath = f.getAbsolutePath();
+                                break;
+                            }
+                        } catch (Exception ignored) {}
                     }
                 }
                 // 3. Fallback: if filename ends with .parquet, find recursively across candidate dirs
                 if (foundPath == null && path.endsWith(".parquet") && !path.contains("*")) {
                     String fileName = new File(path).getName();
-                    for (String basePath : searchPaths) {
-                        File base = new File(basePath);
-                        if (base.exists() && base.isDirectory()) {
-                            List<File> matches = new ArrayList<>();
-                            findFilesRecursively(base, fileName, matches);
-                            if (!matches.isEmpty()) {
-                                foundPath = matches.get(0).getAbsolutePath();
-                                break;
-                            }
+                    if (SAFE_ID_PATTERN.matcher(fileName.replace(".parquet", "")).matches() && !fileName.contains("..")) {
+                        for (String basePath : searchPaths) {
+                            try {
+                                File base = new File(basePath).getCanonicalFile();
+                                if (base.exists() && base.isDirectory()) {
+                                    List<File> matches = new ArrayList<>();
+                                    findFilesRecursively(base, fileName, matches);
+                                    if (!matches.isEmpty()) {
+                                        foundPath = matches.get(0).getAbsolutePath();
+                                        break;
+                                    }
+                                }
+                            } catch (Exception ignored) {}
                         }
                     }
                 }
 
                 // 4. Wildcard glob pattern resolution: if path contains '*', resolve against reportsDir or searchPaths
-                if (foundPath == null && path.contains("*")) {
+                if (foundPath == null && path.contains("*") && !path.contains("..")) {
                     if (reportsDir != null && reportsDir.exists()) {
-                        foundPath = new File(reportsDir, path).getPath();
-                    } else {
-                        for (String basePath : searchPaths) {
-                            File base = new File(basePath);
-                            if (base.exists() && base.isDirectory()) {
-                                foundPath = new File(base, path).getPath();
-                                break;
+                        File globCandidate = new File(reportsDir, path);
+                        try {
+                            if (globCandidate.toPath().normalize().startsWith(reportsDir.toPath().normalize())) {
+                                foundPath = globCandidate.getPath();
                             }
+                        } catch (Exception ignored) {}
+                    }
+                    if (foundPath == null) {
+                        for (String basePath : searchPaths) {
+                            try {
+                                File base = new File(basePath).getCanonicalFile();
+                                if (base.exists() && base.isDirectory()) {
+                                    File globCandidate = new File(base, path);
+                                    if (globCandidate.toPath().normalize().startsWith(base.toPath())) {
+                                        foundPath = globCandidate.getPath();
+                                        break;
+                                    }
+                                }
+                            } catch (Exception ignored) {}
                         }
                     }
                 }
@@ -383,27 +488,34 @@ public class JobReportService {
     }
 
     public List<DocumentLedgerEntry> loadEntriesFromDisk(String executionId) {
+        String safeExecId = sanitizeExecutionId(executionId);
         // 1. Try reading compliance CSV manifest
-        Optional<File> csvOpt = getExportFile(executionId, "csv");
+        Optional<File> csvOpt = getExportFile(safeExecId, "csv");
         if (csvOpt.isPresent()) {
-            List<DocumentLedgerEntry> fromCsv = loadEntriesFromCsv(csvOpt.get());
-            if (!fromCsv.isEmpty()) {
-                log.info("Loaded {} document ledger entries from CSV manifest {}", fromCsv.size(), csvOpt.get().getName());
-                return fromCsv;
+            File file = csvOpt.get();
+            if (isAllowedReportFile(file)) {
+                List<DocumentLedgerEntry> fromCsv = loadEntriesFromCsv(file);
+                if (!fromCsv.isEmpty()) {
+                    log.info("Loaded {} document ledger entries from CSV manifest {}", fromCsv.size(), file.getName());
+                    return fromCsv;
+                }
             }
         }
 
         // 2. Fallback: try DuckDB query on columnar Parquet
-        Optional<File> parquetOpt = getExportFile(executionId, "parquet");
+        Optional<File> parquetOpt = getExportFile(safeExecId, "parquet");
         if (parquetOpt.isPresent()) {
-            try {
-                List<DocumentLedgerEntry> fromParquet = loadEntriesFromParquet(parquetOpt.get());
-                if (!fromParquet.isEmpty()) {
-                    log.info("Loaded {} document ledger entries from Parquet file {}", fromParquet.size(), parquetOpt.get().getName());
-                    return fromParquet;
+            File file = parquetOpt.get();
+            if (isAllowedReportFile(file)) {
+                try {
+                    List<DocumentLedgerEntry> fromParquet = loadEntriesFromParquet(file);
+                    if (!fromParquet.isEmpty()) {
+                        log.info("Loaded {} document ledger entries from Parquet file {}", fromParquet.size(), file.getName());
+                        return fromParquet;
+                    }
+                } catch (Exception e) {
+                    log.warn("Failed to load ledger entries from parquet file {}: {}", file.getName(), e.getMessage());
                 }
-            } catch (Exception e) {
-                log.warn("Failed to load ledger entries from parquet file {}: {}", parquetOpt.get().getName(), e.getMessage());
             }
         }
 
@@ -412,7 +524,10 @@ public class JobReportService {
 
     private List<DocumentLedgerEntry> loadEntriesFromCsv(File file) {
         List<DocumentLedgerEntry> result = new ArrayList<>();
-        try (java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.FileReader(file, java.nio.charset.StandardCharsets.UTF_8))) {
+        if (!isAllowedReportFile(file)) {
+            return result;
+        }
+        try (BufferedReader reader = Files.newBufferedReader(file.getCanonicalFile().toPath(), StandardCharsets.UTF_8)) {
             String header = reader.readLine();
             if (header == null) return result;
             String line;
