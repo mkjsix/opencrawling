@@ -1,7 +1,7 @@
 # OpenCrawling
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg?style=flat)](LICENSE)
-[![GitHub Stars](https://img.shields.io/github/stars/opencrawling/opencrawling?style=flat&logo=github)](https://github.com/opencrawling/opencrawling/stargazers)
+[![GitHub Stars](https://img.shields.io/github/stars/opencrawling/opencrawling.svg?style=flat&logo=github)](https://github.com/opencrawling/opencrawling/stargazers)
 [![GitHub Issues](https://img.shields.io/github/issues/opencrawling/opencrawling.svg?style=flat&logo=github)](https://github.com/opencrawling/opencrawling/issues)
 [![GitHub Commit Activity](https://img.shields.io/github/commit-activity/m/opencrawling/opencrawling.svg?style=flat&logo=github)](https://github.com/opencrawling/opencrawling/commits/main)
 [![Slack Community](https://img.shields.io/badge/Slack-Join_Community-4A154B.svg?style=flat&logo=slack&logoColor=white)](https://join.slack.com/t/opencrawling/shared_invite/zt-43r2anb6q-YLoBsOrxCCcBWU5Up3P1rw)
