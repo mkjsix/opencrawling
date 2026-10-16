@@ -25,7 +25,8 @@ import {
   Search,
   ChevronRight,
   Wand2,
-  ArrowRightLeft
+  ArrowRightLeft,
+  FileSpreadsheet
 } from 'lucide-react'
 import Dashboard from './components/Dashboard'
 import JobTable from './components/JobTable'
@@ -33,9 +34,10 @@ import ConnectorForm from './components/ConnectorForm'
 import Settings from './components/Settings'
 import Narrativization from './components/Narrativization'
 import McfMigration from './components/McfMigration'
+import ReportDashboard from './components/ReportDashboard'
 import { statusApi } from './lib/api'
 
-type View = 'dashboard' | 'jobs' | 'connectors' | 'logs' | 'settings' | 'narrativization' | 'mcf-migration'
+type View = 'dashboard' | 'jobs' | 'connectors' | 'reports' | 'mcf-migration' | 'logs' | 'narrativization' | 'settings'
 
 export default function App() {
   const [activeView, setActiveView] = useState<View>('dashboard')
@@ -103,6 +105,7 @@ export default function App() {
     { id: 'dashboard',       label: 'Dashboard',              icon: LayoutDashboard },
     { id: 'jobs',            label: 'Job Management',         icon: PlayCircle },
     { id: 'connectors',      label: 'Connectors',              icon: Plug2 },
+    { id: 'reports',         label: 'Reports & Audit',        icon: FileSpreadsheet },
     { id: 'mcf-migration',   label: 'ManifoldCF Migration',   icon: ArrowRightLeft },
     { id: 'logs',            label: 'Real-time Logs',         icon: Activity },
     { id: 'narrativization', label: 'Narrativization',        icon: Wand2 },
@@ -163,7 +166,7 @@ export default function App() {
             <span>Admin</span>
             <ChevronRight className="w-4 h-4" />
             <span className="text-foreground font-medium capitalize">
-              {activeView === 'mcf-migration' ? 'ManifoldCF Migration' : activeView}
+              {activeView === 'mcf-migration' ? 'ManifoldCF Migration' : activeView === 'reports' ? 'Reports & Audit Ledger' : activeView}
             </span>
           </div>
           
@@ -188,6 +191,7 @@ export default function App() {
           {activeView === 'dashboard' && <Dashboard />}
           {activeView === 'jobs' && <JobTable setActiveView={setActiveView} />}
           {activeView === 'connectors' && <ConnectorForm />}
+          {activeView === 'reports' && <ReportDashboard />}
           {activeView === 'mcf-migration' && <McfMigration />}
           {activeView === 'settings' && <Settings />}
           {activeView === 'narrativization' && <Narrativization />}

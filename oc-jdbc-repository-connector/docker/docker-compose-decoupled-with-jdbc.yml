@@ -80,7 +80,7 @@ services:
       retries: 5
 
   ollama:
-    image: ollama/ollama:0.23.4
+    image: ollama/ollama:0.40.5
     container_name: ollama-decoupled-jdbc
     ports:
       - "11434:11434"
@@ -95,7 +95,7 @@ services:
       retries: 3
 
   ollama-model-puller:
-    image: ollama/ollama:0.23.4
+    image: ollama/ollama:0.40.5
     container_name: ollama-model-puller-decoupled-jdbc
     entrypoint: ["/bin/sh", "-c", "ollama pull mxbai-embed-large && ollama pull nomic-embed-text"]
     environment:
@@ -162,6 +162,9 @@ services:
       - SPRING_AI_VECTORSTORE_PGVECTOR_URL=jdbc:postgresql://postgres-vector:5432/opencrawling
       - SPRING_AI_VECTORSTORE_PGVECTOR_USERNAME=opencrawling
       - SPRING_AI_VECTORSTORE_PGVECTOR_PASSWORD=opencrawling_password
+      - SPRING_OPENCRAWLING_REPORTING_LOCAL_DIR=/data/reports
+    volumes:
+      - opencrawling-reportsdata-jdbc:/data/reports
     depends_on:
       kafka:
         condition: service_started
@@ -283,6 +286,9 @@ services:
       - SPRING_AI_VECTORSTORE_PGVECTOR_URL=jdbc:postgresql://postgres-vector:5432/opencrawling
       - SPRING_AI_VECTORSTORE_PGVECTOR_USERNAME=opencrawling
       - SPRING_AI_VECTORSTORE_PGVECTOR_PASSWORD=opencrawling_password
+      - SPRING_OPENCRAWLING_REPORTING_LOCAL_DIR=/data/reports
+    volumes:
+      - opencrawling-reportsdata-jdbc:/data/reports
     depends_on:
       postgres-vector:
         condition: service_healthy
@@ -310,3 +316,6 @@ volumes:
     name: opencrawling-ollamadata
   opencrawling-kafkadata-jdbc:
     name: opencrawling-kafkadata-jdbc
+  opencrawling-reportsdata-jdbc:
+    name: opencrawling-reportsdata-jdbc
+

@@ -66,7 +66,7 @@ services:
       retries: 5
 
   ollama:
-    image: ollama/ollama:0.23.4
+    image: ollama/ollama:0.40.5
     container_name: ollama-decoupled-opensearch
     ports:
       - "11434:11434"
@@ -81,7 +81,7 @@ services:
       retries: 3
 
   ollama-model-puller:
-    image: ollama/ollama:0.23.4
+    image: ollama/ollama:0.40.5
     container_name: ollama-model-puller-decoupled-opensearch
     entrypoint: ["/bin/sh", "-c", "ollama pull mxbai-embed-large && ollama pull nomic-embed-text && ollama pull all-minilm && ollama pull llama3.2"]
     environment:
@@ -184,8 +184,10 @@ services:
       - SPRING_OPENCRAWLING_OUTPUT_TYPE=opensearch3
       - SPRING_OPENCRAWLING_OUTPUT_OPENSEARCH3_URIS=http://opensearch-standalone:9200
       - SPRING_AUTOCONFIGURE_EXCLUDE=org.springframework.ai.autoconfigure.vectorstore.pgvector.PgVectorStoreAutoConfiguration
+      - SPRING_OPENCRAWLING_REPORTING_LOCAL_DIR=/data/reports
     volumes:
       - ../../oc-runtime/data:/data  # Mount sample files directory
+      - opencrawling-reportsdata-opensearch:/data/reports
     depends_on:
       - kafka
     networks:
@@ -274,8 +276,10 @@ services:
       - SPRING_OPENCRAWLING_OUTPUT_TYPE=opensearch3
       - SPRING_OPENCRAWLING_OUTPUT_OPENSEARCH3_URIS=http://opensearch-standalone:9200
       - SPRING_AUTOCONFIGURE_EXCLUDE=org.springframework.ai.autoconfigure.vectorstore.pgvector.PgVectorStoreAutoConfiguration
+      - SPRING_OPENCRAWLING_REPORTING_LOCAL_DIR=/data/reports
     volumes:
       - ../../oc-runtime/data:/app/data
+      - opencrawling-reportsdata-opensearch:/data/reports
     depends_on:
       - redis
     networks:
@@ -312,3 +316,6 @@ volumes:
     name: opencrawling-ollamadata
   opencrawling-kafkadata-opensearch:
     name: opencrawling-kafkadata-opensearch
+  opencrawling-reportsdata-opensearch:
+    name: opencrawling-reportsdata-opensearch
+

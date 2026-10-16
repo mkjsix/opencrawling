@@ -50,6 +50,11 @@ public interface OpenCrawlingClient extends AutoCloseable {
      */
     NarrativizationCopilotClient narrativization();
 
+    /**
+     * Client for post-job audit reporting, Parquet downloads, and DuckDB analytical queries.
+     */
+    ReportClient reports();
+
     @Override
     default void close() {
         // No-op default close for resources

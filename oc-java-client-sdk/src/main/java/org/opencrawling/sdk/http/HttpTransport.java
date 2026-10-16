@@ -90,6 +90,47 @@ public class HttpTransport {
         sendRequest(method, path, jsonBody);
     }
 
+    public byte[] executeBytes(String method, String path) {
+        String fullUrl = path.startsWith("http://") || path.startsWith("https://") 
+                ? path 
+                : baseUrl + (path.startsWith("/") ? path : "/" + path);
+
+        HttpRequest.Builder builder = HttpRequest.newBuilder()
+                .uri(URI.create(fullUrl))
+                .timeout(requestTimeout);
+
+        if (apiKey != null && !apiKey.isBlank()) {
+            builder.header("X-API-Key", apiKey);
+        }
+        if (bearerToken != null && !bearerToken.isBlank()) {
+            builder.header("Authorization", "Bearer " + bearerToken);
+        }
+
+        switch (method.toUpperCase()) {
+            case "GET" -> builder.GET();
+            case "DELETE" -> builder.DELETE();
+            default -> builder.method(method.toUpperCase(), HttpRequest.BodyPublishers.noBody());
+        }
+
+        try {
+            log.debug("Executing HTTP {} (binary) to {}", method, fullUrl);
+            HttpResponse<byte[]> response = httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofByteArray());
+            log.debug("Received HTTP {} from {}", response.statusCode(), fullUrl);
+
+            if (response.statusCode() >= 400) {
+                String errorBody = response.body() != null ? new String(response.body()) : "";
+                throw new OpenCrawlingApiException(response.statusCode(), errorBody);
+            }
+
+            return response.body();
+        } catch (IOException | InterruptedException e) {
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+            throw new OpenCrawlingNetworkException("Network error while communicating with OpenCrawling endpoint: " + fullUrl, e);
+        }
+    }
+
     private String serializeBody(Object body) {
         if (body == null) {
             return null;

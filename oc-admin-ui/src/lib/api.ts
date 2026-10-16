@@ -166,4 +166,82 @@ export const mcfMigrationApi = {
   apply: (data: McfMigrationRequest) => api.post<McfMigrationResponse>('/mcf-migration/apply', data),
 }
 
+export interface JobReportSummary {
+  jobId: string
+  executionId: string
+  jobName: string
+  pipelineMode: 'RAG' | 'MIGRATION'
+  repositoryConnector: string
+  outputConnector: string
+  status: 'SUCCESS' | 'PARTIAL' | 'FAILED'
+  startTime: string
+  endTime: string
+  durationMs: number
+  totalDocuments: number
+  successfulDocuments: number
+  failedDocuments: number
+  skippedDocuments: number
+  // RAG
+  totalChunks?: number
+  totalTokens?: number
+  estimatedEmbeddingCostUsd?: number
+  embeddingModel?: string
+  // Migration
+  totalBinaryBytes?: number
+  totalReclaimedBytes?: number
+  safePrunedCount?: number
+  verifiedChecksumCount?: number
+  // Artifact paths
+  reportPathParquet?: string
+  reportPathCsv?: string
+  reportPathJson?: string
+}
+
+export interface DocumentLedgerEntry {
+  jobId: string
+  executionId: string
+  pipelineMode: 'RAG' | 'MIGRATION'
+  documentId: string
+  sourceUri: string
+  connectorSource: string
+  connectorTarget: string
+  status: 'SUCCESS' | 'FAILED' | 'SKIPPED' | 'QUARANTINED'
+  durationMs: number
+  timestampUtc: string
+  errorCode?: string
+  errorMessage?: string
+  // RAG
+  ragChunkCount?: number
+  ragTokenCount?: number
+  ragEmbeddingModel?: string
+  ragEmbeddingDimensions?: number
+  ragVectorTable?: string
+  // Migration
+  migBinarySizeBytes?: number
+  migSha256Checksum?: string
+  migTargetBucket?: string
+  migTargetKey?: string
+  migSidecarWritten?: boolean
+  migCallbackHttpStatus?: number
+  migSafePruned?: boolean
+  migReclaimedBytes?: number
+}
+
+export interface PaginatedLedgerResponse {
+  items: DocumentLedgerEntry[]
+  total: number
+  page: number
+  size: number
+}
+
+export const reportApi = {
+  getAll: () => api.get<JobReportSummary[]>('/reports'),
+  getById: (jobId: string, executionId: string) => api.get<JobReportSummary>(`/reports/${jobId}/${executionId}`),
+  getDocumentLedger: (jobId: string, executionId: string, params?: { status?: string; query?: string; page?: number; size?: number }) =>
+    api.get<PaginatedLedgerResponse>(`/reports/${jobId}/${executionId}/documents`, { params }),
+  getExportUrl: (jobId: string, executionId: string, format: 'csv' | 'parquet' | 'json') =>
+    `/api/reports/${jobId}/${executionId}/export?format=${format}`,
+  runQuery: (sql: string) => api.post<{ columns: string[]; rows: any[][] }>('/reports/query', { sql }),
+}
+
 export default api

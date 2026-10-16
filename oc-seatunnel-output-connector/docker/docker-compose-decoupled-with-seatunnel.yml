@@ -52,7 +52,7 @@ services:
       retries: 5
 
   ollama:
-    image: ollama/ollama:0.23.4
+    image: ollama/ollama:0.40.5
     container_name: ollama-decoupled-seatunnel
     ports:
       - "11434:11434"
@@ -67,7 +67,7 @@ services:
       retries: 3
 
   ollama-model-puller:
-    image: ollama/ollama:0.23.4
+    image: ollama/ollama:0.40.5
     container_name: ollama-model-puller-decoupled-seatunnel
     entrypoint: ["/bin/sh", "-c", "ollama pull mxbai-embed-large && ollama pull nomic-embed-text && ollama pull all-minilm && ollama pull llama3.2"]
     environment:
@@ -171,8 +171,10 @@ services:
       - SPRING_OPENCRAWLING_OUTPUT_SEATUNNEL_REST_URL=http://seatunnel:8080
       - SPRING_OPENCRAWLING_OUTPUT_SEATUNNEL_BOOTSTRAP_SERVERS=kafka:9094
       - SPRING_AUTOCONFIGURE_EXCLUDE=org.springframework.ai.autoconfigure.vectorstore.pgvector.PgVectorStoreAutoConfiguration
+      - SPRING_OPENCRAWLING_REPORTING_LOCAL_DIR=/data/reports
     volumes:
       - ../../oc-runtime/data:/data
+      - opencrawling-reportsdata-seatunnel:/data/reports
     depends_on:
       - kafka
     networks:
@@ -262,8 +264,10 @@ services:
       - SPRING_OPENCRAWLING_OUTPUT_TYPE=seatunnel
       - SPRING_OPENCRAWLING_OUTPUT_SEATUNNEL_REST_URL=http://seatunnel:8080
       - SPRING_AUTOCONFIGURE_EXCLUDE=org.springframework.ai.autoconfigure.vectorstore.pgvector.PgVectorStoreAutoConfiguration
+      - SPRING_OPENCRAWLING_REPORTING_LOCAL_DIR=/data/reports
     volumes:
       - ../../oc-runtime/data:/app/data
+      - opencrawling-reportsdata-seatunnel:/data/reports
     depends_on:
       - redis
     networks:
@@ -298,3 +302,6 @@ volumes:
     name: opencrawling-ollamadata
   opencrawling-kafkadata-seatunnel:
     name: opencrawling-kafkadata-seatunnel
+  opencrawling-reportsdata-seatunnel:
+    name: opencrawling-reportsdata-seatunnel
+

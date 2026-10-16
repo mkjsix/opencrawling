@@ -86,6 +86,25 @@ spring:
         path-style-access: true
         region: us-east-1
         auto-create-bucket: true
+    reporting:
+      enabled: ${SPRING_OPENCRAWLING_REPORTING_ENABLED:true}
+      storage:
+        type: ${SPRING_OPENCRAWLING_REPORTING_STORAGE_TYPE:LOCAL}
+        local-dir: ${SPRING_OPENCRAWLING_REPORTING_LOCAL_DIR:target/reports}
+        s3:
+          endpoint: ${SPRING_OPENCRAWLING_REPORTING_S3_ENDPOINT:http://localhost:9878}
+          bucket: ${SPRING_OPENCRAWLING_REPORTING_S3_BUCKET:opencrawling-audit-reports}
+          region: ${SPRING_OPENCRAWLING_REPORTING_S3_REGION:us-east-1}
+          path-style-access: true
+      formats:
+        parquet:
+          enabled: true
+          compression: ZSTD
+          row-group-size-bytes: 134217728
+          page-size-bytes: 1048576
+        avro: false
+        csv: true
+        json: true
 
   kafka:
     bootstrap-servers: 127.0.0.1:9092
