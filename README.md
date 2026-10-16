@@ -29,7 +29,7 @@
 [![Luxir](https://img.shields.io/badge/Luxir-Search_Engine-00ADD8.svg?style=flat&logo=search&logoColor=white)](https://luxir.org/)
 [![Apache SeaTunnel](https://img.shields.io/badge/Apache_SeaTunnel-v2.3.13-0099FF.svg?style=flat&logo=apache&logoColor=white)](https://seatunnel.apache.org/)
 [![Redis](https://img.shields.io/badge/Redis-Supported-red.svg?style=flat&logo=redis&logoColor=white)](https://redis.io/)
-[![Ollama](https://img.shields.io/badge/Ollama-0.23.4-white.svg?style=flat&logo=ollama&logoColor=black)](https://ollama.com/)
+[![Ollama](https://img.shields.io/badge/Ollama-0.40.5-white.svg?style=flat&logo=ollama&logoColor=black)](https://ollama.com/)
 [![OIS](https://img.shields.io/badge/OIS-Open_Ingestion_Standard-0052CC.svg?style=flat)](https://github.com/opencrawling/open-ingestion-standard)
 [![MCP](https://img.shields.io/badge/MCP-Model_Context_Protocol-8A2BE2.svg?style=flat&logo=anthropic&logoColor=white)](https://modelcontextprotocol.io/)
 [![gRPC Transport](https://img.shields.io/badge/gRPC-Internal_Transport-4285F4.svg?style=flat&logo=grpc&logoColor=white)](#-grpc-high-performance-internal-transport)

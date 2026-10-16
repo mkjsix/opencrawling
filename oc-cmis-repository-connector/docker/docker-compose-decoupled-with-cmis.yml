@@ -180,7 +180,7 @@ services:
       retries: 5
 
   ollama:
-    image: ollama/ollama:0.23.4
+    image: ollama/ollama:0.40.5
     container_name: ollama-decoupled-cmis
     ports:
       - "11434:11434"
@@ -195,7 +195,7 @@ services:
       retries: 5
 
   ollama-model-puller:
-    image: ollama/ollama:0.23.4
+    image: ollama/ollama:0.40.5
     container_name: ollama-model-puller-decoupled-cmis
     environment:
       - OLLAMA_HOST=ollama:11434
@@ -278,8 +278,10 @@ services:
       - SPRING_AI_VECTORSTORE_PGVECTOR_PASSWORD=opencrawling_password
       - SPRING_OPENCRAWLING_CLAIM_CHECK_STORE=local
       - SPRING_OPENCRAWLING_CLAIM_CHECK_LOCAL_DIR=/data/claims
+      - SPRING_OPENCRAWLING_REPORTING_LOCAL_DIR=/data/reports
     volumes:
       - opencrawling-claims-cmis:/data/claims
+      - opencrawling-reportsdata-cmis:/data/reports
     depends_on:
       kafka:
         condition: service_started
@@ -426,6 +428,9 @@ services:
       - SPRING_AI_VECTORSTORE_PGVECTOR_PASSWORD=opencrawling_password
       - SPRING_AI_VECTORSTORE_PGVECTOR_DIMENSIONS=1024
       - SPRING_AI_VECTORSTORE_PGVECTOR_TABLE_NAME=vector_store_1024
+      - SPRING_OPENCRAWLING_REPORTING_LOCAL_DIR=/data/reports
+    volumes:
+      - opencrawling-reportsdata-cmis:/data/reports
     depends_on:
       postgres-vector:
         condition: service_healthy
@@ -457,3 +462,6 @@ volumes:
     name: opencrawling-alfresco-pgdata-cmis
   opencrawling-claims-cmis:
     name: opencrawling-claims-cmis
+  opencrawling-reportsdata-cmis:
+    name: opencrawling-reportsdata-cmis
+

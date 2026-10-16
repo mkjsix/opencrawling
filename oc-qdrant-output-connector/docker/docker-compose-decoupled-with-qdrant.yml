@@ -51,7 +51,7 @@ services:
       retries: 5
 
   ollama:
-    image: ollama/ollama:0.23.4
+    image: ollama/ollama:0.40.5
     container_name: ollama-decoupled-qdrant
     ports:
       - "11434:11434"
@@ -66,7 +66,7 @@ services:
       retries: 3
 
   ollama-model-puller:
-    image: ollama/ollama:0.23.4
+    image: ollama/ollama:0.40.5
     container_name: ollama-model-puller-decoupled-qdrant
     entrypoint: ["/bin/sh", "-c", "ollama pull mxbai-embed-large && ollama pull nomic-embed-text && ollama pull all-minilm && ollama pull llama3.2"]
     environment:
@@ -169,8 +169,10 @@ services:
       - SPRING_OPENCRAWLING_OUTPUT_TYPE=qdrant
       - SPRING_OPENCRAWLING_OUTPUT_QDRANT_HOST=qdrant
       - SPRING_AUTOCONFIGURE_EXCLUDE=org.springframework.ai.autoconfigure.vectorstore.pgvector.PgVectorStoreAutoConfiguration
+      - SPRING_OPENCRAWLING_REPORTING_LOCAL_DIR=/data/reports
     volumes:
       - ../../oc-runtime/data:/data  # Mount sample files directory
+      - opencrawling-reportsdata-qdrant:/data/reports
     depends_on:
       - kafka
     networks:
@@ -257,8 +259,10 @@ services:
       - SPRING_OPENCRAWLING_OUTPUT_TYPE=qdrant
       - SPRING_OPENCRAWLING_OUTPUT_QDRANT_HOST=qdrant
       - SPRING_AUTOCONFIGURE_EXCLUDE=org.springframework.ai.autoconfigure.vectorstore.pgvector.PgVectorStoreAutoConfiguration
+      - SPRING_OPENCRAWLING_REPORTING_LOCAL_DIR=/data/reports
     volumes:
       - ../../oc-runtime/data:/app/data
+      - opencrawling-reportsdata-qdrant:/data/reports
     depends_on:
       - redis
     networks:
@@ -295,3 +299,6 @@ volumes:
     name: opencrawling-ollamadata
   opencrawling-kafkadata-qdrant:
     name: opencrawling-kafkadata-qdrant
+  opencrawling-reportsdata-qdrant:
+    name: opencrawling-reportsdata-qdrant
+

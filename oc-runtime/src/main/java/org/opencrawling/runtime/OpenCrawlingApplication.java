@@ -118,6 +118,12 @@ public class OpenCrawlingApplication {
             log.info("--- Bootstrap sequence completed ---");
 
             if (isStandaloneCrawler) {
+                // Allow asynchronous reporting tasks (Parquet, CSV, JSON writers) to flush to disk
+                try {
+                    Thread.sleep(1500);
+                } catch (InterruptedException ignored) {
+                    Thread.currentThread().interrupt();
+                }
                 if (crawlSuccess) {
                     log.info("Standalone crawler job completed. Exiting process cleanly.");
                     System.exit(0);

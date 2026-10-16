@@ -54,7 +54,7 @@ services:
       retries: 5
 
   ollama:
-    image: ollama/ollama:0.23.4
+    image: ollama/ollama:0.40.5
     container_name: ollama-decoupled
     ports:
       - "11434:11434"
@@ -69,7 +69,7 @@ services:
       retries: 3
 
   ollama-model-puller:
-    image: ollama/ollama:0.23.4
+    image: ollama/ollama:0.40.5
     container_name: ollama-model-puller-decoupled
     entrypoint: ["/bin/sh", "-c", "ollama pull mxbai-embed-large && ollama pull nomic-embed-text && ollama pull all-minilm && ollama pull llama3.2"]
     environment:
@@ -173,9 +173,11 @@ services:
       - OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://otel-collector:4318/v1/traces
       - OPENCRAWLING_OBSERVABILITY_ENABLED=true
       - OPENCRAWLING_OBSERVABILITY_SAMPLING_PROBABILITY=1.0
+      - SPRING_OPENCRAWLING_REPORTING_LOCAL_DIR=/data/reports
     volumes:
       - ./oc-runtime/data:/data  # Mount sample files directory
       - opencrawling-claims:/claims
+      - opencrawling-reportsdata:/data/reports
     depends_on:
       - kafka
       - postgres
@@ -267,8 +269,10 @@ services:
       - OPENCRAWLING_OBSERVABILITY_SAMPLING_PROBABILITY=1.0
       - SPRING_OPENCRAWLING_CLAIM_CHECK_LOCAL_DIR=/claims
       - OPENCRAWLING_INGEST_OIS_TOKEN=${OPENCRAWLING_INGEST_OIS_TOKEN:-}
+      - SPRING_OPENCRAWLING_REPORTING_LOCAL_DIR=/data/reports
     volumes:
       - opencrawling-claims:/claims  # Local claim check files, shared with oc-ingestion-consumer
+      - opencrawling-reportsdata:/data/reports
     depends_on:
       - postgres
       - redis
@@ -305,3 +309,5 @@ volumes:
     name: opencrawling-kafkadata
   opencrawling-claims:
     name: opencrawling-claims
+  opencrawling-reportsdata:
+    name: opencrawling-reportsdata

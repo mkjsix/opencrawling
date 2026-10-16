@@ -37,6 +37,8 @@ import org.opencrawling.core.claimcheck.ClaimCheckStore;
 import org.opencrawling.core.claimcheck.CompositeClaimCheckStore;
 import org.opencrawling.core.pipeline.PipelineMode;
 import org.opencrawling.core.pipeline.PipelineProperties;
+import org.opencrawling.core.reporting.DocumentLedgerEntry;
+import org.opencrawling.runtime.reporting.JobLedgerAccumulator;
 import java.io.File;
 import java.io.InputStream;
 import java.net.URI;
@@ -67,6 +69,9 @@ public class JobOrchestrator {
 
     @Autowired(required = false)
     private PipelineProperties pipelineProperties;
+
+    @Autowired(required = false)
+    private JobLedgerAccumulator ledgerAccumulator;
 
     @Value("${opencrawling.pipeline.mode:rag}")
     private String defaultPipelineMode = "rag";
@@ -120,6 +125,18 @@ public class JobOrchestrator {
     @SuppressWarnings("preview")
     public boolean runJob(RepositoryConnector repositoryConnector, OutputConnector outputConnector, String path,
             String transformationConnector, String jobId, NarrativizationConfig narrativization, PipelineMode pipelineMode) {
+        return runJob(repositoryConnector, outputConnector, path, transformationConnector, jobId, narrativization, pipelineMode, null);
+    }
+
+    @SuppressWarnings("preview")
+    public boolean runJob(RepositoryConnector repositoryConnector, OutputConnector outputConnector, String path,
+            String transformationConnector, String jobId, NarrativizationConfig narrativization, PipelineMode pipelineMode, String executionId) {
+        return runJob(repositoryConnector, outputConnector, path, transformationConnector, jobId, null, narrativization, pipelineMode, executionId);
+    }
+
+    @SuppressWarnings("preview")
+    public boolean runJob(RepositoryConnector repositoryConnector, OutputConnector outputConnector, String path,
+            String transformationConnector, String jobId, String jobName, NarrativizationConfig narrativization, PipelineMode pipelineMode, String executionId) {
         
         PipelineMode resolvedMode = pipelineMode != null ? pipelineMode :
             (pipelineProperties != null ? pipelineProperties.getMode() : PipelineMode.fromString(defaultPipelineMode));
@@ -138,16 +155,24 @@ public class JobOrchestrator {
                 narrativization.template().substring(0, Math.min(60, narrativization.template().length())));
         }
 
-        return runJobInternal(repositoryConnector, outputConnector, path, transformationConnector, jobId, mustacheConnector, resolvedMode);
+        return runJobInternal(repositoryConnector, outputConnector, path, transformationConnector, jobId, jobName, mustacheConnector, resolvedMode, executionId);
     }
 
     @SuppressWarnings("preview")
     private boolean runJobInternal(RepositoryConnector repositoryConnector, OutputConnector outputConnector, String path,
-            String transformationConnector, String jobId, MustacheTransformationConnector mustacheConnector, PipelineMode pipelineMode) {
+            String transformationConnector, String jobId, String jobName, MustacheTransformationConnector mustacheConnector, PipelineMode pipelineMode, String executionId) {
         log.info("Starting job {} for path: {} with transformation connector: {} (pipeline mode: {})", jobId, path, transformationConnector, pipelineMode);
         long startTime = System.currentTimeMillis();
         String traceId = UUID.randomUUID().toString().substring(0, 8);
         String currentJobId = jobId != null ? jobId : "1";
+        String currentExecutionId = executionId != null ? executionId : UUID.randomUUID().toString().substring(0, 8);
+
+        if (ledgerAccumulator != null) {
+            String repoName = repositoryConnector != null ? repositoryConnector.getClass().getSimpleName() : "UnknownRepository";
+            String outName = outputConnector != null ? outputConnector.getClass().getSimpleName() : "DirectKafka";
+            String resolvedJobName = jobName != null && !jobName.isBlank() ? jobName : ("Job #" + currentJobId);
+            ledgerAccumulator.startExecution(currentJobId, currentExecutionId, resolvedJobName, pipelineMode, repoName, outName);
+        }
         
         Transformation transformation = resolveTransformation(transformationConnector);
         final String finalEngine = transformation.engine();
@@ -157,6 +182,7 @@ public class JobOrchestrator {
             
             StructuredTaskScope.Subtask<List<ScanResult>> scanTask = scope.fork(org.opencrawling.observability.concurrency.ObservabilityTask.observed(() -> {
                 Function<RepositoryDocument, ScanResult> processDocument = initialDoc -> {
+                        long docStartTime = System.currentTimeMillis();
                         try {
                             RepositoryDocument doc = initialDoc;
                             if (mustacheConnector != null) {
@@ -209,6 +235,15 @@ public class JobOrchestrator {
                                     // or ingest a dangling reference: report the document as failed instead.
                                     log.error("Failed to write Claim Check content for doc: {}. Document will not be published.", doc.id(), e);
                                     traceStore.recordError(currentJobId, "ERROR", "ClaimCheckStore", "Failed to write Claim Check content for doc: " + doc.id(), e.toString());
+                                    if (ledgerAccumulator != null) {
+                                        long docDuration = System.currentTimeMillis() - docStartTime;
+                                        ledgerAccumulator.recordDocument(DocumentLedgerEntry.failure(
+                                                currentJobId, currentExecutionId, pipelineMode, doc.id(), doc.uri(),
+                                                repositoryConnector.getClass().getSimpleName(),
+                                                outputConnector != null ? outputConnector.getClass().getSimpleName() : "ClaimCheckStore",
+                                                docDuration, "CLAIM_CHECK_ERROR", e.getMessage()
+                                        ));
+                                    }
                                     return new ScanResult.Failure(doc.id(), e);
                                 }
                             }
@@ -236,6 +271,15 @@ public class JobOrchestrator {
                                     // Standalone crawler: Kafka is the only delivery path, losing the message means losing the document.
                                     log.error("Kafka publish failed for doc {}: {}", doc.id(), kafkaEx.getMessage());
                                     traceStore.recordError(currentJobId, "ERROR", "Kafka", "Kafka publish failed for doc: " + doc.id(), kafkaEx.toString());
+                                    if (ledgerAccumulator != null) {
+                                        long docDuration = System.currentTimeMillis() - docStartTime;
+                                        ledgerAccumulator.recordDocument(DocumentLedgerEntry.failure(
+                                                currentJobId, currentExecutionId, pipelineMode, doc.id(), doc.uri(),
+                                                repositoryConnector.getClass().getSimpleName(),
+                                                "Kafka",
+                                                docDuration, "KAFKA_PUBLISH_ERROR", kafkaEx.getMessage()
+                                        ));
+                                    }
                                     return new ScanResult.Failure(doc.id(), kafkaEx);
                                 }
                                 log.warn("Kafka publish skipped or unavailable for doc {}: {}", doc.id(), kafkaEx.getMessage());
@@ -268,9 +312,56 @@ public class JobOrchestrator {
                                     log.error("Direct OutputConnector ingestion failed for doc {}: {}", doc.id(), outEx.getMessage(), outEx);
                                 }
                             }
+
+                            if (ledgerAccumulator != null) {
+                                long docDuration = System.currentTimeMillis() - docStartTime;
+                                if (pipelineMode == PipelineMode.MIGRATION) {
+                                    long sizeBytes = 0L;
+                                    List<String> sizeMeta = doc.metadata().get("binary_size");
+                                    if (sizeMeta != null && !sizeMeta.isEmpty()) {
+                                        try { sizeBytes = Long.parseLong(sizeMeta.get(0)); } catch (Exception ignored) {}
+                                    }
+                                    String sha256 = doc.metadata().getOrDefault("checksum_sha256", List.of("")).stream().findFirst().orElse("");
+                                    String bucket = doc.metadata().getOrDefault("target_bucket", List.of("")).stream().findFirst().orElse("");
+                                    String key = doc.metadata().getOrDefault("target_key", List.of("")).stream().findFirst().orElse("");
+                                    boolean safePruned = Boolean.parseBoolean(doc.metadata().getOrDefault("safe_pruned", List.of("false")).get(0));
+                                    long reclaimedBytes = 0L;
+                                    List<String> reclaimedMeta = doc.metadata().get("reclaimed_bytes");
+                                    if (reclaimedMeta != null && !reclaimedMeta.isEmpty()) {
+                                        try { reclaimedBytes = Long.parseLong(reclaimedMeta.get(0)); } catch (Exception ignored) {}
+                                    }
+                                    ledgerAccumulator.recordDocument(DocumentLedgerEntry.migrationSuccess(
+                                            currentJobId, currentExecutionId, doc.id(), finalUri,
+                                            repositoryConnector.getClass().getSimpleName(),
+                                            outputConnector != null ? outputConnector.getClass().getSimpleName() : "DirectOzone",
+                                            docDuration, sizeBytes, sha256, bucket, key, true, 200, safePruned, reclaimedBytes
+                                    ));
+                                } else {
+                                    int tokenCount = 100;
+                                    List<String> lengthMeta = doc.metadata().get("content_length");
+                                    if (lengthMeta != null && !lengthMeta.isEmpty()) {
+                                        try { tokenCount = Math.max(1, Integer.parseInt(lengthMeta.get(0)) / 4); } catch (Exception ignored) {}
+                                    }
+                                    ledgerAccumulator.recordDocument(DocumentLedgerEntry.ragSuccess(
+                                            currentJobId, currentExecutionId, doc.id(), finalUri,
+                                            repositoryConnector.getClass().getSimpleName(),
+                                            outputConnector != null ? outputConnector.getClass().getSimpleName() : "PGVector",
+                                            docDuration, 1, tokenCount, finalEngine, 1024, "vector_store"
+                                    ));
+                                }
+                            }
                             
                             return new ScanResult.Success(doc.id(), "1.0");
                         } catch (Exception e) {
+                            if (ledgerAccumulator != null) {
+                                long docDuration = System.currentTimeMillis() - docStartTime;
+                                ledgerAccumulator.recordDocument(DocumentLedgerEntry.failure(
+                                        currentJobId, currentExecutionId, pipelineMode, initialDoc.id(), initialDoc.uri(),
+                                        repositoryConnector.getClass().getSimpleName(),
+                                        outputConnector != null ? outputConnector.getClass().getSimpleName() : "Kafka",
+                                        docDuration, "PROCESSING_ERROR", e.getMessage()
+                                ));
+                            }
                             traceStore.recordError(currentJobId, "ERROR", "RepositoryConnector", "Scan failed for doc " + initialDoc.id() + ": " + e.getMessage(), e.toString());
                             return new ScanResult.Failure(initialDoc.id(), e);
                         }
@@ -327,13 +418,23 @@ public class JobOrchestrator {
                 Map.of("path", path, "scannedCount", String.valueOf(scanResults.size()))
             ));
 
+            if (ledgerAccumulator != null) {
+                ledgerAccumulator.completeExecution(currentExecutionId, true, Map.of("durationMs", duration));
+            }
+
             log.info("Job scanning phase completed in {} ms. Documents published to Kafka.", duration);
             return true;
         } catch (StructuredTaskScope.FailedException e) {
+            if (ledgerAccumulator != null) {
+                ledgerAccumulator.completeExecution(currentExecutionId, false, Map.of("error", e.getMessage()));
+            }
             log.error("Job execution failed due to subtask failure: ", e.getCause());
             traceStore.recordError(currentJobId, "ERROR", "JobOrchestrator", "Job execution failed due to subtask failure: " + e.getCause().getMessage(), e.toString());
             return false;
         } catch (Exception e) {
+            if (ledgerAccumulator != null) {
+                ledgerAccumulator.completeExecution(currentExecutionId, false, Map.of("error", e.getMessage()));
+            }
             log.error("Job execution failed: ", e);
             traceStore.recordError(currentJobId, "ERROR", "JobOrchestrator", "Job execution failed: " + e.getMessage(), e.toString());
             return false;

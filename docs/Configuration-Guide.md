@@ -99,3 +99,52 @@ OpenCrawling integrates end-to-end distributed tracing and metrics that are enab
 *   **`OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`**: Configures the HTTP endpoint of the OpenTelemetry Collector.
     *   *Type*: `string`
     *   *Default*: `http://localhost:4318/v1/traces`
+
+---
+
+## 📊 Lakehouse Columnar Audit Reporting & Ledger Configuration
+
+OpenCrawling provides automated, post-job execution audit reports and document-level ledgers. Reports are stored in columnar Apache Parquet with Zstandard (ZSTD) compression, along with CSV compliance manifests, JSON operational summaries, and optional Avro containers. Hive-style directory partitioning (`mode=.../year=.../month=.../day=...`) enables fast analytical querying using the embedded DuckDB engine.
+
+### 1. Spring Boot Properties (`application.yml`)
+
+```yaml
+opencrawling:
+  reporting:
+    enabled: true                     # Enable audit reporting and ledger generation
+    storage:
+      type: LOCAL                     # LOCAL or S3
+      local-dir: target/reports       # Local disk folder (Docker: /data/reports)
+      s3:
+        endpoint: http://localhost:9878
+        bucket: opencrawling-audit-reports
+        region: us-east-1
+    formats:
+      parquet:
+        enabled: true                 # Generate Apache Parquet columnar file
+        compression: ZSTD             # Codec: ZSTD, SNAPPY, GZIP, UNCOMPRESSED
+        row-group-size-bytes: 134217728 # 128 MB row group size
+        page-size-bytes: 1048576       # 1 MB page size
+      avro: false                     # Generate optional binary Avro file
+      csv: true                       # Generate RFC 4180 CSV compliance manifest
+      json: true                      # Generate operational JSON summary
+```
+
+### 2. Environment Variables
+
+| Environment Variable | Spring Property | Default | Description |
+|---|---|---|---|
+| `SPRING_OPENCRAWLING_REPORTING_ENABLED` | `opencrawling.reporting.enabled` | `true` | Master toggle for audit reporting and ledger tracking |
+| `SPRING_OPENCRAWLING_REPORTING_STORAGE_TYPE` | `opencrawling.reporting.storage.type` | `LOCAL` | Storage backend (`LOCAL` or `S3`) |
+| `SPRING_OPENCRAWLING_REPORTING_LOCAL_DIR` | `opencrawling.reporting.storage.local-dir` | `target/reports` | Local disk folder for reports (Docker: `/data/reports`) |
+| `SPRING_OPENCRAWLING_REPORTING_S3_ENDPOINT` | `opencrawling.reporting.storage.s3.endpoint` | `http://localhost:9878` | S3 or Apache Ozone S3 Gateway endpoint |
+| `SPRING_OPENCRAWLING_REPORTING_S3_BUCKET` | `opencrawling.reporting.storage.s3.bucket` | `opencrawling-audit-reports` | S3 bucket name for reports |
+| `SPRING_OPENCRAWLING_REPORTING_S3_REGION` | `opencrawling.reporting.storage.s3.region` | `us-east-1` | S3 signing region |
+| `SPRING_OPENCRAWLING_REPORTING_FORMATS_PARQUET_ENABLED` | `opencrawling.reporting.formats.parquet.enabled` | `true` | Generate columnar Apache Parquet files |
+| `SPRING_OPENCRAWLING_REPORTING_FORMATS_PARQUET_COMPRESSION` | `opencrawling.reporting.formats.parquet.compression` | `ZSTD` | Compression codec (`ZSTD`, `SNAPPY`, `GZIP`, `UNCOMPRESSED`) |
+| `SPRING_OPENCRAWLING_REPORTING_FORMATS_PARQUET_ROW_GROUP_SIZE_BYTES` | `opencrawling.reporting.formats.parquet.row-group-size-bytes` | `134217728` | Parquet row group buffer size in bytes (128 MB) |
+| `SPRING_OPENCRAWLING_REPORTING_FORMATS_PARQUET_PAGE_SIZE_BYTES` | `opencrawling.reporting.formats.parquet.page-size-bytes` | `1048576` | Parquet data page size in bytes (1 MB) |
+| `SPRING_OPENCRAWLING_REPORTING_FORMATS_AVRO` | `opencrawling.reporting.formats.avro` | `false` | Generate binary Avro schema container files |
+| `SPRING_OPENCRAWLING_REPORTING_FORMATS_CSV` | `opencrawling.reporting.formats.csv` | `true` | Generate CSV compliance audit manifests |
+| `SPRING_OPENCRAWLING_REPORTING_FORMATS_JSON` | `opencrawling.reporting.formats.json` | `true` | Generate high-level operational JSON summaries |
+

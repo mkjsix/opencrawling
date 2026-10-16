@@ -146,4 +146,46 @@ class OpenCrawlingCliTest {
             System.setErr(originalErr);
         }
     }
+
+    @Test
+    void testReportCommandHelp() {
+        CommandLine cmd = new CommandLine(new OpenCrawlingCliCommand());
+        int exitCode = cmd.execute("report", "--help");
+        assertEquals(0, exitCode);
+        assertTrue(outContent.toString().contains("Audit reporting"));
+        assertTrue(outContent.toString().contains("ledger"));
+        assertTrue(outContent.toString().contains("export"));
+        assertTrue(outContent.toString().contains("query"));
+    }
+
+    @Test
+    void testReportGetRequiresArguments() {
+        java.io.PrintStream originalErr = System.err;
+        ByteArrayOutputStream errContent = new ByteArrayOutputStream();
+        System.setErr(new PrintStream(errContent));
+        try {
+            int exitCode = new CommandLine(new OpenCrawlingCliCommand())
+                    .execute("report", "get");
+            assertEquals(2, exitCode);
+            assertTrue(errContent.toString().contains("Both Job ID and Execution ID must be specified"));
+        } finally {
+            System.setErr(originalErr);
+        }
+    }
+
+    @Test
+    void testReportQueryRequiresSql() {
+        java.io.PrintStream originalErr = System.err;
+        ByteArrayOutputStream errContent = new ByteArrayOutputStream();
+        System.setErr(new PrintStream(errContent));
+        try {
+            int exitCode = new CommandLine(new OpenCrawlingCliCommand())
+                    .execute("report", "query");
+            assertEquals(2, exitCode);
+            assertTrue(errContent.toString().contains("Please provide a SQL query"));
+        } finally {
+            System.setErr(originalErr);
+        }
+    }
 }
+

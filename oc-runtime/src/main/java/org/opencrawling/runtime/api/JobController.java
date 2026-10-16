@@ -49,6 +49,9 @@ public class JobController {
     @Autowired(required = false)
     private PipelineProperties pipelineProperties;
 
+    @Autowired(required = false)
+    private org.opencrawling.runtime.reporting.JobLedgerAccumulator ledgerAccumulator;
+
     @Autowired
     public JobController(
             JobOrchestrator jobOrchestrator,
@@ -488,15 +491,17 @@ public class JobController {
             
             // Execute real crawler inside virtual thread
             Thread.ofVirtual().start(() -> {
+                String executionId = "exec-" + java.util.UUID.randomUUID().toString().substring(0, 8);
                 try {
-                    log.info("Background Virtual Thread running. Path: {}, OutputConnector: {}", finalActiveJob.path(), finalOutputConnector.getName());
-                    jobOrchestrator.runJob(finalConnector, finalOutputConnector, finalActiveJob.path(), finalActiveJob.transformationConnector(), finalActiveJob.id(), finalActiveJob.narrativization(), mode);
+                    log.info("Background Virtual Thread running [Exec ID: {}]. Path: {}, OutputConnector: {}", executionId, finalActiveJob.path(), finalOutputConnector.getName());
+                    jobOrchestrator.runJob(finalConnector, finalOutputConnector, finalActiveJob.path(), finalActiveJob.transformationConnector(), finalActiveJob.id(), finalActiveJob.name(), finalActiveJob.narrativization(), mode, executionId);
                     log.info("Background Virtual Thread completed successfully!");
-                    // update status to completed when done, and pull actual db document count
-                    updateJobStatusAndStage(id, "Finished", "Completed", getActualDbDocCount());
+                    long docCount = resolveExecutionDocCount(executionId, finalActiveJob.documents());
+                    updateJobStatusAndStage(id, "Finished", "Completed", docCount);
                 } catch (Exception e) {
                     log.error("Background Virtual Thread failed: {}", e.getMessage(), e);
-                    updateJobStatusAndStage(id, "Error", "Failed", getActualDbDocCount());
+                    long docCount = resolveExecutionDocCount(executionId, finalActiveJob.documents());
+                    updateJobStatusAndStage(id, "Error", "Failed", docCount);
                 }
             });
         }
@@ -549,7 +554,6 @@ public class JobController {
                 String stage = "Idle";
                 if (status.equals("Running")) {
                     stage = "Scanning";
-                    docCount += 10;
                     log.info("Job '{}' [ID: {}] status updated to Running. Stage: Scanning. Root path: {}", job.name(), job.id(), job.path());
                 } else if (status.equals("Paused")) {
                     stage = "Paused";
@@ -603,6 +607,16 @@ public class JobController {
             }
         }
         PersistenceHelper.save("jobs.json", jobs);
+    }
+
+    private long resolveExecutionDocCount(String executionId, long previousCount) {
+        if (ledgerAccumulator != null && executionId != null) {
+            org.opencrawling.core.event.JobExecutionCompletedEvent event = ledgerAccumulator.getCompletedEvent(executionId);
+            if (event != null) {
+                return event.totalDocuments();
+            }
+        }
+        return previousCount;
     }
 
     private long getActualDbDocCount() {
