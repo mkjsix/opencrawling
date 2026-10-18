@@ -38,6 +38,12 @@ compose() {
   docker compose -f docker-compose-decoupled.yml "$@"
 }
 
+cleanup() {
+  echo -e "\n${YELLOW}Tearing down decoupled test environment...${NC}"
+  compose down --remove-orphans >/dev/null 2>&1 || true
+}
+trap cleanup EXIT
+
 print_logs() {
   compose logs oc-mcp-server oc-ingestion-consumer oc-embedding-consumer oc-writer-consumer | tail -200
 }

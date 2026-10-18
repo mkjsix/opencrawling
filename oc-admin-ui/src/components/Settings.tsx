@@ -72,6 +72,7 @@ interface SystemSettings {
   tikaFallbackToEmbedded: boolean
   tikaExtractEmbedded: boolean
   tikaWriteLimit: number
+  tikaNumClients: number
 }
 
 export default function Settings() {
@@ -97,8 +98,9 @@ export default function Settings() {
     tikaJvmHeap: '-Xmx512m',
     tikaMaxFilesPerProcess: 10000,
     tikaFallbackToEmbedded: true,
-    tikaExtractEmbedded: false,
-    tikaWriteLimit: 20000000
+    tikaExtractEmbedded: true,
+    tikaWriteLimit: 20000000,
+    tikaNumClients: 1
   })
 
   const [transportSettings, setTransportSettings] = useState<TransportSettings>({
@@ -534,6 +536,13 @@ export default function Settings() {
               </div>
             </div>
 
+            <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg flex items-center gap-3 text-amber-300 text-xs">
+              <AlertCircle className="w-4 h-4 shrink-0 text-amber-400" />
+              <span>
+                <strong>Application Restart Required:</strong> Tika child JVM and execution properties are initialized at startup. Changes to fork mode, worker clients, heap, or timeouts take effect upon restarting the application or container.
+              </span>
+            </div>
+
             <div className="space-y-6">
               {/* Architecture Mode Selection */}
               <div>
@@ -676,6 +685,23 @@ export default function Settings() {
                   />
                   <p className="text-xs text-muted-foreground">
                     Maximum characters extracted per document before truncating (default: 20,000,000 characters).
+                  </p>
+                </div>
+
+                {/* Number of Fork Worker Clients */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Fork Worker Clients (Concurrency)</label>
+                  <input
+                    type="number"
+                    value={settings.tikaNumClients || 1}
+                    onChange={(e) => setSettings({ ...settings, tikaNumClients: parseInt(e.target.value) || 1 })}
+                    className="w-full bg-background border border-border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 text-foreground font-mono"
+                    min="1"
+                    max="32"
+                    required
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Number of concurrent Pipes child worker clients handling simultaneous document parsing.
                   </p>
                 </div>
               </div>

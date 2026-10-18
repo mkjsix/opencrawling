@@ -17,7 +17,6 @@ package org.opencrawling.runtime.messaging;
 
 import org.opencrawling.core.text.TextExtractionService;
 import org.opencrawling.core.text.TextExtractionResult;
-import org.opencrawling.core.text.PipesForkTextExtractor;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.transformer.splitter.TokenTextSplitter;
 import org.opencrawling.runtime.config.KafkaConfig;
@@ -71,7 +70,7 @@ public class IngestionConsumer {
         this.claimCheckProperties = claimCheckProperties;
         this.traceStore = traceStore;
         this.textSplitter = TokenTextSplitter.builder().build();
-        this.textExtractionService = textExtractionService != null ? textExtractionService : new PipesForkTextExtractor();
+        this.textExtractionService = textExtractionService != null ? textExtractionService : TextExtractionService.noop();
     }
 
     @jakarta.annotation.PostConstruct
@@ -79,7 +78,9 @@ public class IngestionConsumer {
         log.info("IngestionConsumer initialized successfully with ClaimCheckStore: {}!", claimCheckStore.getClass().getSimpleName());
     }
 
-    @KafkaListener(topics = KafkaConfig.TOPIC_NAME)
+    @KafkaListener(
+            topics = KafkaConfig.TOPIC_NAME,
+            groupId = "${spring.kafka.consumer.ingestion-group-id:opencrawling-ingestion-group}")
     public void consume(IngestionMessage message) {
         log.info("Received document message from Kafka: {}", message.documentId());
         if (message.pipelineMode() != null && message.pipelineMode().isMigration()) {

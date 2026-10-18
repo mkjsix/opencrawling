@@ -40,7 +40,9 @@ public class EmbeddingConsumer {
         this.kafkaTemplate = kafkaTemplate;
     }
 
-    @KafkaListener(topics = KafkaConfig.CHUNKS_TOPIC_NAME)
+    @KafkaListener(
+            topics = KafkaConfig.CHUNKS_TOPIC_NAME,
+            groupId = "${spring.kafka.consumer.embedding-group-id:opencrawling-embedding-group}")
     public void consume(DocumentChunkMessage message) {
         log.info("Received chunk for embedding: {} (Engine: {}, Connector: {})", 
             message.chunkId(), message.transformationEngine(), message.transformationConnector());

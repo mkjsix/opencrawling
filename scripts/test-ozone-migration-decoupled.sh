@@ -74,6 +74,13 @@ compose() {
   docker compose -f "${COMPOSE_FILE}" "$@"
 }
 
+cleanup() {
+  echo -e "\n${YELLOW}Tearing down Ozone migration decoupled test environment...${NC}"
+  compose down --remove-orphans -v >/dev/null 2>&1 || true
+  rm -rf "${TEST_DOC_DIR:-}"
+}
+trap cleanup EXIT
+
 # Clean up any existing containers from previous test runs
 echo -e "${YELLOW}Cleaning up previous decoupled Ozone migration containers...${NC}"
 compose down --remove-orphans -v || true

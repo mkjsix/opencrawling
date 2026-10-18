@@ -452,7 +452,7 @@ for test_path in ${SELECTED_TESTS[@]+"${SELECTED_TESTS[@]}"}; do
 
   # Ensure common integration test ports are not blocked by lingering containers from aborted/prior runs
   if command -v docker >/dev/null 2>&1; then
-    for p in 8080 8081 8088 9092 5432 5433 6379 11434 5801 9878 9879; do
+    for p in 8080 8081 8082 8085 8088 8983 9092 9095 9200 9600 9862 9878 9879 5432 5433 6333 6334 6379 11434 5801 19071 19530; do
       c_ids=$(docker ps --filter "publish=$p" -q 2>/dev/null || true)
       if [ -n "$c_ids" ]; then
         docker stop $c_ids >/dev/null 2>&1 || true

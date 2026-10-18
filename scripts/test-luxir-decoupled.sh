@@ -45,6 +45,12 @@ compose() {
   docker compose -f "${COMPOSE_FILE}" "$@"
 }
 
+cleanup() {
+  echo -e "\n${YELLOW}Tearing down Luxir decoupled test environment...${NC}"
+  compose down --remove-orphans >/dev/null 2>&1 || true
+}
+trap cleanup EXIT
+
 # Clean up any existing containers
 echo -e "${YELLOW}Cleaning up previous Luxir decoupled containers...${NC}"
 compose down --remove-orphans || true

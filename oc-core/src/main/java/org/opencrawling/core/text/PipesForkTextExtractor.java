@@ -16,36 +16,43 @@
 package org.opencrawling.core.text;
 
 import java.io.ByteArrayInputStream;
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
-import java.net.URI;
-import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
+import java.nio.file.attribute.PosixFilePermission;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.security.CodeSource;
 import java.util.ArrayList;
-import java.util.Arrays;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 import org.apache.tika.Tika;
 import org.apache.tika.config.TimeoutLimits;
+import org.apache.tika.exception.WriteLimitReachedException;
 import org.apache.tika.io.TikaInputStream;
 import org.apache.tika.metadata.Metadata;
 import org.apache.tika.metadata.TikaCoreProperties;
+import org.apache.tika.parser.AutoDetectParser;
+import org.apache.tika.parser.EmptyParser;
 import org.apache.tika.parser.ParseContext;
+import org.apache.tika.parser.Parser;
 import org.apache.tika.pipes.api.ParseMode;
 import org.apache.tika.pipes.api.PipesResult;
 import org.apache.tika.pipes.fork.PipesForkParser;
 import org.apache.tika.pipes.fork.PipesForkParserConfig;
 import org.apache.tika.pipes.fork.PipesForkResult;
 import org.apache.tika.sax.BasicContentHandlerFactory;
+import org.apache.tika.sax.BodyContentHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -63,7 +70,6 @@ public class PipesForkTextExtractor implements TextExtractionService {
 
     private final TextExtractionProperties properties;
     private PipesForkParser pipesForkParser;
-    private final Tika embeddedTika;
     private boolean useEmbeddedFallback = false;
 
     public PipesForkTextExtractor() {
@@ -72,7 +78,6 @@ public class PipesForkTextExtractor implements TextExtractionService {
 
     public PipesForkTextExtractor(TextExtractionProperties properties) {
         this.properties = properties != null ? properties : new TextExtractionProperties();
-        this.embeddedTika = new Tika();
 
         if (this.properties.isEnabled() && this.properties.isForkEnabled() && this.properties.getTimeoutMs() > 0) {
             try {
@@ -102,8 +107,8 @@ public class PipesForkTextExtractor implements TextExtractionService {
     private PipesForkParser buildPipesForkParser(TextExtractionProperties conf) throws Exception {
         ensureTikaExtrasClasspath();
 
-        if (System.getProperty("tika.pipes.server.stdio") == null) {
-            System.setProperty("tika.pipes.server.stdio", "discard");
+        if (conf.getServerStdio() != null && System.getProperty("tika.pipes.server.stdio") == null) {
+            System.setProperty("tika.pipes.server.stdio", conf.getServerStdio());
         }
 
         PipesForkParserConfig config = new PipesForkParserConfig();
@@ -180,8 +185,8 @@ public class PipesForkTextExtractor implements TextExtractionService {
                         }
                     }
 
-                    // Fallback for unextracted Spring Boot uber fat-jars: unpack BOOT-INF/lib to temp cache
-                    Path cacheDir = Paths.get(System.getProperty("java.io.tmpdir"), "opencrawling-tika-fork-libs");
+                    // Fallback for unextracted Spring Boot uber fat-jars: unpack BOOT-INF/lib to secure private temp cache
+                    Path cacheDir = createSecureTempLibDir();
                     extractFatJarLibs(codePath, cacheDir);
                     if (Files.isDirectory(cacheDir) && hasJarFiles(cacheDir)) {
                         System.setProperty(TIKA_EXTRAS_DIR, cacheDir.toAbsolutePath().toString());
@@ -192,6 +197,38 @@ public class PipesForkTextExtractor implements TextExtractionService {
             }
         } catch (Exception e) {
             log.debug("Could not inspect code source for Tika extras classpath: {}", e.getMessage());
+        }
+    }
+
+    private static Path createSecureTempLibDir() throws IOException {
+        Path tempDir;
+        try {
+            Set<PosixFilePermission> perms = PosixFilePermissions.fromString("rwx------");
+            tempDir = Files.createTempDirectory("oc-tika-libs-", PosixFilePermissions.asFileAttribute(perms));
+        } catch (UnsupportedOperationException e) {
+            tempDir = Files.createTempDirectory("oc-tika-libs-");
+            File f = tempDir.toFile();
+            f.setReadable(true, true);
+            f.setWritable(true, true);
+            f.setExecutable(true, true);
+        }
+        final Path dirToDelete = tempDir;
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> deleteRecursively(dirToDelete)));
+        return tempDir;
+    }
+
+    private static void deleteRecursively(Path path) {
+        if (path == null || !Files.exists(path)) return;
+        try {
+            Files.walk(path)
+                    .sorted(Comparator.reverseOrder())
+                    .forEach(p -> {
+                        try {
+                            Files.deleteIfExists(p);
+                        } catch (IOException ignored) {
+                        }
+                    });
+        } catch (IOException ignored) {
         }
     }
 
@@ -213,27 +250,22 @@ public class PipesForkTextExtractor implements TextExtractionService {
                     JarEntry entry = entries.nextElement();
                     String name = entry.getName();
                     if (name.startsWith("BOOT-INF/lib/") && name.endsWith(".jar") && !entry.isDirectory()) {
-                        if (name.contains("..")) {
+                        String simpleName = name.substring("BOOT-INF/lib/".length());
+                        if (simpleName.contains("/") || simpleName.contains("\\") || simpleName.isBlank()) {
                             log.warn("Skipping zip entry with path traversal: {}", name);
                             continue;
                         }
-                        Path entryPath = Paths.get(name).getFileName();
-                        if (entryPath == null) {
-                            continue;
-                        }
-                        String filename = entryPath.toString();
-                        if (filename.isBlank() || filename.contains("..")) {
-                            log.warn("Skipping invalid zip entry filename: {}", filename);
-                            continue;
-                        }
-                        Path outFile = destinationDir.resolve(filename).normalize();
+                        Path outFile = destinationDir.resolve(simpleName).normalize();
                         if (!outFile.startsWith(destinationDir)) {
-                            throw new SecurityException("Zip entry is outside target directory: " + name);
+                            log.warn("Skipping zip entry outside target directory: {}", name);
+                            continue;
                         }
                         if (!Files.exists(outFile) || Files.size(outFile) != entry.getSize()) {
+                            Path tmpFile = destinationDir.resolve(simpleName + ".tmp." + System.nanoTime());
                             try (InputStream is = jarFile.getInputStream(entry)) {
-                                Files.copy(is, outFile, StandardCopyOption.REPLACE_EXISTING);
+                                Files.copy(is, tmpFile, StandardCopyOption.REPLACE_EXISTING);
                             }
+                            Files.move(tmpFile, outFile, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
                         }
                     }
                 }
@@ -292,8 +324,13 @@ public class PipesForkTextExtractor implements TextExtractionService {
         if (pipesForkParser != null && !useEmbeddedFallback) {
             try {
                 return parseWithPipes(contentBytes, mergedMetadata);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                log.warn("Tika PipesForkParser interrupted during parsing: {}", e.getMessage());
+                return TextExtractionResult.failure("Tika parsing interrupted", mergedMetadata);
             } catch (Exception e) {
-                log.warn("PipesForkParser failed: {}. Falling back to embedded Tika.", e.getMessage());
+                log.error("Tika Pipes child parse error during execution: {}", e.getMessage(), e);
+                return TextExtractionResult.failure("Tika Pipes child parse error: " + e.getMessage(), mergedMetadata);
             }
         }
 
@@ -337,12 +374,11 @@ public class PipesForkTextExtractor implements TextExtractionService {
             text = fallbackPlainText(contentBytes, metadata);
         }
 
-        boolean trimmed = result.getStatus() == PipesResult.RESULT_STATUS.PARSE_SUCCESS_WITH_EXCEPTION
-                || result.getStatus() == PipesResult.RESULT_STATUS.PARTIAL_TIMEOUT
+        boolean trimmed = result.getStatus() == PipesResult.RESULT_STATUS.PARTIAL_TIMEOUT
                 || isWriteLimitReached(result.getMetadata());
 
-        // Merge extracted metadata
-        if (result.getMetadata() != null) {
+        // Merge extracted metadata only if configured
+        if (properties.isExtractMetadata() && result.getMetadata() != null) {
             for (String name : result.getMetadata().names()) {
                 mergedTikaMetadata(metadata, name, result.getMetadata().getValues(name));
             }
@@ -352,30 +388,46 @@ public class PipesForkTextExtractor implements TextExtractionService {
     }
 
     private TextExtractionResult parseWithEmbedded(byte[] contentBytes, Map<String, List<String>> metadata) {
-        String text = "";
         Metadata tikaMd = new Metadata();
         populateTikaMetadata(tikaMd, metadata);
 
-        try (InputStream is = new ByteArrayInputStream(contentBytes)) {
-            text = embeddedTika.parseToString(is, tikaMd);
+        int writeLimit = properties.getWriteLimit() > 0 ? properties.getWriteLimit() : 20_000_000;
+        BodyContentHandler handler = new BodyContentHandler(writeLimit);
+        AutoDetectParser parser = new AutoDetectParser();
+        ParseContext context = new ParseContext();
+
+        if (properties.isExtractEmbedded()) {
+            context.set(Parser.class, parser);
+        } else {
+            context.set(Parser.class, new EmptyParser());
+        }
+
+        boolean trimmed = false;
+        try (TikaInputStream tis = TikaInputStream.get(contentBytes)) {
+            parser.parse(tis, handler, tikaMd, context);
         } catch (Exception e) {
-            log.warn("Embedded Tika failed to parse document: {}", e.getMessage());
+            if (WriteLimitReachedException.isWriteLimitReached(e)) {
+                trimmed = true;
+            } else {
+                log.warn("Embedded Tika failed to parse document: {}", e.getMessage());
+                if (handler.toString().isBlank()) {
+                    return TextExtractionResult.failure("Embedded Tika parse error: " + e.getMessage(), metadata);
+                }
+            }
         }
 
-        if (text == null) {
-            text = "";
-        }
-        text = text.replace("\u0000", "");
-
+        String text = handler.toString().replace("\u0000", "");
         if (text.isBlank()) {
             text = fallbackPlainText(contentBytes, metadata);
         }
 
-        for (String name : tikaMd.names()) {
-            mergedTikaMetadata(metadata, name, tikaMd.getValues(name));
+        if (properties.isExtractMetadata()) {
+            for (String name : tikaMd.names()) {
+                mergedTikaMetadata(metadata, name, tikaMd.getValues(name));
+            }
         }
 
-        return TextExtractionResult.success(text, metadata, false);
+        return TextExtractionResult.success(text, metadata, trimmed);
     }
 
     private void populateTikaMetadata(Metadata tikaMd, Map<String, List<String>> metadata) {
@@ -432,6 +484,33 @@ public class PipesForkTextExtractor implements TextExtractionService {
             return new String(contentBytes, StandardCharsets.UTF_8).replace("\u0000", "");
         }
         return "";
+    }
+
+    @Override
+    public boolean isForkActive() {
+        return pipesForkParser != null && !useEmbeddedFallback;
+    }
+
+    @Override
+    public boolean isHealthy() {
+        if (properties.isEnabled() && properties.isForkEnabled()) {
+            return isForkActive();
+        }
+        return properties.isEnabled();
+    }
+
+    @Override
+    public String getEngineName() {
+        if (!properties.isEnabled()) {
+            return "Disabled";
+        }
+        return isForkActive() ? "PipesForkParser (Process-Isolated)" : "In-Process Embedded Tika";
+    }
+
+    @Override
+    public String getVersion() {
+        String ver = Tika.class.getPackage().getImplementationVersion();
+        return (ver != null && !ver.isBlank()) ? ver : "4.1.0";
     }
 
     @Override
