@@ -46,6 +46,14 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
+import io.swagger.v3.oas.annotations.tags.Tag;
+
 /**
  * Accepts OIS documents from producers outside the runtime, such as the StormCrawler bolt, and publishes
  * them into the ingestion pipeline of an existing job. The job supplies the embedding model; the store is
@@ -55,6 +63,7 @@ import java.util.Map;
  * carry {@code Authorization: Bearer <token>}. Whoever holds the token decides the document id and its
  * permissions.
  */
+@Tag(name = "OIS Direct Ingestion", description = "Direct ingestion of Open Ingestion Standard (OIS) documents into active RAG jobs")
 @RestController
 @RequestMapping("/api/v1/ingest/ois")
 public class OisIngestController {
@@ -77,19 +86,28 @@ public class OisIngestController {
         this.token = token;
     }
 
-    /**
-     * Publishes one OIS document for job {@code jobId}. An UPSERT needs {@code content.text}; a DELETE
-     * removes the document with the same id.
-     *
-     * @return 202 once the document is on Kafka; 400 for a malformed document; 401 for missing or wrong
-     *         credentials; 404 when the endpoint is disabled or the job does not exist; 409 when the job
-     *         runs in migration mode; 503 when the document could not be published
-     */
+    @Operation(
+        summary = "Ingest OIS Document",
+        description = "Publishes one Open Ingestion Standard (OIS) document into the ingestion pipeline of an active RAG job. "
+                + "Accepts UPSERT actions (requiring text content and security ACL permissions) or DELETE tombstones to remove documents.",
+        security = @SecurityRequirement(name = "OisTokenAuth")
+    )
+    @ApiResponses({
+        @ApiResponse(responseCode = "202", description = "Document accepted and published to Kafka ingestion pipeline"),
+        @ApiResponse(responseCode = "400", description = "Malformed JSON or invalid OIS document structure"),
+        @ApiResponse(responseCode = "401", description = "Missing or invalid bearer authorization token"),
+        @ApiResponse(responseCode = "404", description = "OIS endpoint is disabled or target job ID does not exist"),
+        @ApiResponse(responseCode = "409", description = "Target job runs in migration mode (OIS ingestion supports RAG jobs only)"),
+        @ApiResponse(responseCode = "503", description = "Document could not be published to Kafka")
+    })
     @PostMapping("/{jobId}")
-    public ResponseEntity<String> ingest(@PathVariable String jobId,
+    public ResponseEntity<String> ingest(
+            @Parameter(description = "Target job unique identifier", example = "1") @PathVariable String jobId,
+            @Parameter(description = "Bearer authorization token: 'Bearer <token>'", example = "Bearer s3cret")
             @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authorization,
             // Bound as a String and parsed only after the credentials check, so that an unauthenticated
             // caller gets 401 for a malformed or empty body too.
+            @io.swagger.v3.oas.annotations.parameters.RequestBody(description = "OIS document JSON payload")
             @RequestBody(required = false) String body) {
         if (token == null || token.isBlank()) {
             return ResponseEntity.notFound().build();
@@ -197,10 +215,25 @@ public class OisIngestController {
     }
 
     /** The fields of an OIS document this endpoint reads; any other field is ignored. */
-    record OisDocument(String id, String action, Content content, Map<String, Object> metadata,
+    @Schema(description = "Open Ingestion Standard (OIS) document payload")
+    record OisDocument(
+            @Schema(description = "Canonical document unique identifier or URI", example = "http://example.com/page.html")
+            String id,
+            @Schema(description = "Document action: 'UPSERT' or 'DELETE'", example = "UPSERT")
+            String action,
+            @Schema(description = "Document content payload")
+            Content content,
+            @Schema(description = "Arbitrary metadata key-value mappings")
+            Map<String, Object> metadata,
+            @Schema(description = "Access Control List and security configuration")
             SecurityConfig security) {
 
-        record Content(String mimeType, String text) {
+        @Schema(description = "Textual content payload of the document")
+        record Content(
+                @Schema(description = "MIME type of the content", example = "text/html")
+                String mimeType,
+                @Schema(description = "Raw text content to be chunked and embedded", example = "Document content...")
+                String text) {
         }
     }
 }

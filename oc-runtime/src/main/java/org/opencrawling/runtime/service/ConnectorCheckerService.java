@@ -36,6 +36,7 @@ import org.opencrawling.doxis.DoxisProperties;
 import org.opencrawling.doxis.client.DoxisClient;
 import org.opencrawling.runtime.api.ConnectorController.ConnectorDTO;
 import org.springframework.stereotype.Service;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 @Service
 public class ConnectorCheckerService {
@@ -713,9 +714,13 @@ public class ConnectorCheckerService {
         return new ConnectionCheckResult(true, "Connector configuration structure validated.", null);
     }
 
+    @Schema(description = "Result of connector live connectivity test")
     public static record ConnectionCheckResult(
+        @Schema(description = "Whether the target connection test succeeded", example = "true")
         boolean success,
+        @Schema(description = "Diagnostic status summary message", example = "Successfully reached endpoint.")
         String message,
+        @Schema(description = "Detailed exception trace or error context if connection failed", example = "null")
         String details
     ) {}
 }
