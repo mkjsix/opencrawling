@@ -32,10 +32,18 @@ import java.util.List;
 import java.util.Set;
 import java.util.regex.Pattern;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.tags.Tag;
+
 /**
  * REST Controller providing execution reporting summaries, paginated document ledgers,
  * one-click file exports (CSV, Parquet, JSON), and serverless analytical querying.
  */
+@Tag(name = "Reports & Lakehouse Audit", description = "Execution reports, document ledgers, Parquet/Avro/CSV exports, and serverless DuckDB analytics")
 @RestController
 @RequestMapping("/api/reports")
 @CrossOrigin(origins = "*")
@@ -55,15 +63,23 @@ public class ReportController {
         return id != null && SAFE_ID_PATTERN.matcher(id).matches() && !id.contains("..");
     }
 
+    @Operation(summary = "List all job reports", description = "Retrieves execution report summaries for all completed or running jobs.")
+    @ApiResponse(responseCode = "200", description = "List of report summaries successfully retrieved")
     @GetMapping
     public ResponseEntity<List<JobReportSummary>> getAllReports() {
         return ResponseEntity.ok(reportService.getAllSummaries());
     }
 
+    @Operation(summary = "Get execution report summary", description = "Retrieves the execution summary and key performance indicators for a specific job run.")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Job execution report summary successfully retrieved"),
+        @ApiResponse(responseCode = "400", description = "Invalid jobId or executionId"),
+        @ApiResponse(responseCode = "404", description = "Report not found")
+    })
     @GetMapping("/{jobId}/{executionId}")
     public ResponseEntity<JobReportSummary> getReport(
-            @PathVariable String jobId,
-            @PathVariable String executionId) {
+            @Parameter(description = "Job unique identifier", example = "1") @PathVariable String jobId,
+            @Parameter(description = "Execution unique identifier", example = "exec-abc12345") @PathVariable String executionId) {
         if (!isValidId(jobId) || !isValidId(executionId)) {
             return ResponseEntity.badRequest().build();
         }
@@ -72,14 +88,19 @@ public class ReportController {
                 .orElse(ResponseEntity.notFound().build());
     }
 
+    @Operation(summary = "Get paginated document ledger", description = "Queries the detailed document execution ledger with optional status filtering and text search.")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Paginated document ledger entries"),
+        @ApiResponse(responseCode = "400", description = "Invalid jobId or executionId")
+    })
     @GetMapping("/{jobId}/{executionId}/documents")
     public ResponseEntity<JobReportService.PaginatedLedgerResponse> getDocumentLedger(
-            @PathVariable String jobId,
-            @PathVariable String executionId,
-            @RequestParam(defaultValue = "ALL") String status,
-            @RequestParam(required = false) String query,
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "50") int size) {
+            @Parameter(description = "Job unique identifier", example = "1") @PathVariable String jobId,
+            @Parameter(description = "Execution unique identifier", example = "exec-abc12345") @PathVariable String executionId,
+            @Parameter(description = "Filter by document processing status (ALL, SUCCESS, FAILED, SKIPPED, QUARANTINED)", example = "ALL") @RequestParam(defaultValue = "ALL") String status,
+            @Parameter(description = "Text query search on document ID or source URI", example = "") @RequestParam(required = false) String query,
+            @Parameter(description = "Page number (0-indexed)", example = "0") @RequestParam(defaultValue = "0") int page,
+            @Parameter(description = "Page size (1-1000)", example = "50") @RequestParam(defaultValue = "50") int size) {
         if (!isValidId(jobId) || !isValidId(executionId)) {
             return ResponseEntity.badRequest().build();
         }
@@ -88,11 +109,17 @@ public class ReportController {
         return ResponseEntity.ok(reportService.getDocumentEntries(executionId, status, query, safePage, safeSize));
     }
 
+    @Operation(summary = "Export document ledger file", description = "Downloads the document audit ledger in the specified format: CSV, Parquet, Avro, or JSON.")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Audit ledger file download"),
+        @ApiResponse(responseCode = "400", description = "Invalid parameters or unsupported format"),
+        @ApiResponse(responseCode = "404", description = "Report export file not found")
+    })
     @GetMapping("/{jobId}/{executionId}/export")
     public ResponseEntity<Resource> exportReport(
-            @PathVariable String jobId,
-            @PathVariable String executionId,
-            @RequestParam(defaultValue = "json") String format) {
+            @Parameter(description = "Job unique identifier", example = "1") @PathVariable String jobId,
+            @Parameter(description = "Execution unique identifier", example = "exec-abc12345") @PathVariable String executionId,
+            @Parameter(description = "Export file format (csv, parquet, avro, json)", example = "parquet") @RequestParam(defaultValue = "json") String format) {
         if (!isValidId(jobId) || !isValidId(executionId)) {
             return ResponseEntity.badRequest().build();
         }
@@ -120,6 +147,12 @@ public class ReportController {
                 .orElse(ResponseEntity.notFound().build());
     }
 
+    @Operation(summary = "Execute serverless DuckDB SQL query", description = "Executes a read-only analytical SQL query powered by DuckDB over generated Parquet audit logs.")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Query result table with columns and rows"),
+        @ApiResponse(responseCode = "400", description = "Invalid or non-read-only SQL query"),
+        @ApiResponse(responseCode = "500", description = "Query execution runtime failure")
+    })
     @PostMapping("/query")
     public ResponseEntity<?> executeQuery(@RequestBody QueryRequest request) {
         if (request == null || request.sql() == null || request.sql().isBlank()) {
@@ -136,5 +169,8 @@ public class ReportController {
         }
     }
 
-    public record QueryRequest(String sql) {}
+    @Schema(description = "Serverless analytical SQL query request")
+    public record QueryRequest(
+            @Schema(description = "Read-only SQL query to execute against Parquet audit logs", example = "SELECT status, count(*) FROM read_parquet('data/reports/*.parquet') GROUP BY status")
+            String sql) {}
 }

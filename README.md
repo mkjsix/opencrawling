@@ -34,6 +34,7 @@
 [![MCP](https://img.shields.io/badge/MCP-Model_Context_Protocol-8A2BE2.svg?style=flat&logo=anthropic&logoColor=white)](https://modelcontextprotocol.io/)
 [![gRPC Transport](https://img.shields.io/badge/gRPC-Internal_Transport-4285F4.svg?style=flat&logo=grpc&logoColor=white)](#-grpc-high-performance-internal-transport)
 [![OpenTelemetry](https://img.shields.io/badge/OpenTelemetry-AIOps-7B42BC.svg?style=flat&logo=opentelemetry&logoColor=white)](https://opentelemetry.io/)
+[![OpenAPI 3.1](https://img.shields.io/badge/OpenAPI-3.1-6BA539.svg?style=flat&logo=openapiinitiative&logoColor=white)](#-openapi-31--interactive-swagger-ui)
 [![Maven Archetypes](https://img.shields.io/badge/Maven_Archetypes-Supported-C71A36.svg?style=flat&logo=apachemaven&logoColor=white)](#-custom-connectors-maven-archetypes-suite)
 [![CLI](https://img.shields.io/badge/CLI-oc--cli-4B0082.svg?style=flat&logo=gnu-bash&logoColor=white)](#-opencrawling-cli-oc)
 [![Maven Central](https://img.shields.io/maven-central/v/org.opencrawling.archetypes/opencrawling-connector-archetypes.svg?style=flat&logo=apachemaven&logoColor=white)](https://central.sonatype.com/artifact/org.opencrawling.archetypes/opencrawling-connector-archetypes)
@@ -254,6 +255,32 @@ service InternalPayloadService {
 
 > [!TIP]
 > See [gRPC Internal Transport](https://github.com/opencrawling/opencrawling/wiki/gRPC-Internal-Transport) in the Wiki for full Protobuf schema definitions, YAML properties, and environment variables.
+
+---
+
+## 📖 OpenAPI 3.1 & Interactive Swagger UI
+
+OpenCrawling provides native, platform-wide **OpenAPI 3.1** specification generation and an interactive **Swagger UI** explorer bundled directly within `oc-runtime`.
+
+### Endpoints
+- **Interactive Swagger UI**: [http://localhost:8080/swagger-ui.html](http://localhost:8080/swagger-ui.html)
+- **OpenAPI 3.1 JSON Specification**: [http://localhost:8080/v3/api-docs](http://localhost:8080/v3/api-docs)
+
+### Core Capabilities
+- **Strict OpenAPI 3.1 Compatibility**: Leveraging `springdoc-openapi` 3.0+ optimized for Java 25 and Spring Boot 4.
+- **Complete Domain Coverage**: Comprehensive `@Operation`, `@ApiResponse`, and `@Parameter` annotations across all 10 logical platform domains:
+  - `Pipeline & Jobs`: Lifecycle orchestration (`POST /api/jobs/{id}/start`, `stop`, `pause`, `resume`, pagination, status).
+  - `Connectors`: Dynamic repository, transformation, and output connector discovery and connection checks.
+  - `OIS Direct Ingestion`: High-throughput, token-secured direct document ingestion (`POST /api/ois/ingest`).
+  - `Reports & Lakehouse Audit`: Job summaries, Parquet Lakehouse audit trails, DuckDB/Iceberg query executions.
+  - `Observability & AIOps`: Live pipeline telemetry, trace timeline visualizer, metrics, and error logs.
+  - `System & Settings`: System settings and runtime configuration management.
+  - `Transport Settings`: High-performance internal transport configuration and live gRPC diagnostic ping probes.
+  - `ManifoldCF Migration`: Automated Apache ManifoldCF job and connector definition conversion.
+  - `Vespa Insights`: Vespa cluster connectivity diagnostics, document counts, BM25 text queries, and schema deployments.
+  - `Auto-Narrativization Copilot`: AI-driven Mustache narrative template generation from structured schema definitions.
+- **Security Schemes**: Includes explicit documentation for `OisTokenAuth` HTTP Bearer token authentication on secure endpoints.
+- **Client SDK Generation**: The generated `/v3/api-docs` spec can be directly consumed by OpenAPI Generator to synthesize typed clients in TypeScript, Python, Go, or Rust.
 
 ---
 

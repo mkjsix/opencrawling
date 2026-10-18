@@ -27,6 +27,14 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.http.ResponseEntity;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.tags.Tag;
+
+@Tag(name = "Connectors", description = "Management, configuration, and live connectivity tests for repository, output, and transformation connectors")
 @RestController
 @RequestMapping("/api/connectors")
 public class ConnectorController {
@@ -252,13 +260,25 @@ public class ConnectorController {
         }
     }
 
+    @Operation(summary = "List all connectors", description = "Retrieves all configured connectors across all categories.")
+    @ApiResponse(responseCode = "200", description = "List of all configured connectors successfully retrieved")
+    @GetMapping
+    public List<ConnectorDTO> getAllConnectors() {
+        return storage;
+    }
+
+    @Operation(summary = "List connectors by type", description = "Retrieves all configured connectors filtered by category ('repository', 'output', or 'transformation').")
+    @ApiResponse(responseCode = "200", description = "Filtered list of connectors successfully retrieved")
     @GetMapping("/{type}")
-    public List<ConnectorDTO> getConnectors(@PathVariable String type) {
+    public List<ConnectorDTO> getConnectors(
+            @Parameter(description = "Connector category type ('repository', 'output', or 'transformation')", example = "repository") @PathVariable String type) {
         return storage.stream()
                 .filter(c -> c.type().equalsIgnoreCase(type))
                 .toList();
     }
 
+    @Operation(summary = "Create or update connector", description = "Saves or updates a connector configuration definition.")
+    @ApiResponse(responseCode = "201", description = "Connector definition saved successfully")
     @PostMapping
     public ResponseEntity<Void> createConnector(@RequestBody ConnectorDTO connector) {
         System.out.println("Saving connector: " + connector.name());
@@ -268,6 +288,8 @@ public class ConnectorController {
         return ResponseEntity.status(201).build();
     }
 
+    @Operation(summary = "Test connector connectivity", description = "Performs a live connectivity and authentication verification check against the target system.")
+    @ApiResponse(responseCode = "200", description = "Connection check result with status and diagnostic message")
     @PostMapping("/check")
     public ResponseEntity<ConnectionCheckResult> checkConnection(@RequestBody ConnectorDTO connector) {
         System.out.println("Checking connection for connector: " + connector.name() + " (" + connector.className() + ")");
@@ -282,19 +304,29 @@ public class ConnectorController {
         return ResponseEntity.ok(result);
     }
 
+    @Operation(summary = "Delete connector", description = "Removes a configured connector definition by its name/id.")
+    @ApiResponse(responseCode = "200", description = "Connector deleted successfully")
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> deleteConnector(@PathVariable String id) {
+    public ResponseEntity<Void> deleteConnector(
+            @Parameter(description = "Connector unique identifier or name", example = "FileSystem_Local") @PathVariable String id) {
         storage.removeIf(c -> c.name().equals(id));
         PersistenceHelper.save("connectors.json", storage);
         return ResponseEntity.ok().build();
     }
 
+    @Schema(description = "Connector configuration and metadata definition")
     public static record ConnectorDTO(
+        @Schema(description = "Unique connector identifier or name", example = "FileSystem_Local")
         String name, 
+        @Schema(description = "Human-readable description of the connector", example = "Local File System")
         String description, 
+        @Schema(description = "Connector category: 'repository', 'output', or 'transformation'", example = "repository")
         String type, 
+        @Schema(description = "Fully-qualified Java class name of the connector implementation", example = "org.opencrawling.crawler.connectors.filesystem.FileConnector")
         String className, 
+        @Schema(description = "Maximum concurrent connections allowed for this connector", example = "10")
         Integer maxConnections, 
+        @Schema(description = "Key-value configuration properties specific to this connector implementation")
         Map<String, String> configuration
     ) {}
 }

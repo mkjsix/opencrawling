@@ -33,7 +33,15 @@ import org.opencrawling.core.pipeline.PipelineMode;
 import org.opencrawling.core.pipeline.PipelineProperties;
 import org.opencrawling.filesystem.FileSystemRepositoryConnector;
 import org.opencrawling.runtime.orchestrator.JobOrchestrator;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.tags.Tag;
 
+@Tag(name = "Pipeline & Jobs", description = "Operations for managing, configuring, triggering, and monitoring crawling pipeline jobs")
 @RestController
 @RequestMapping("/api/jobs")
 public class JobController {
@@ -71,13 +79,21 @@ public class JobController {
         this.jobs = new CopyOnWriteArrayList<>(PersistenceHelper.loadList("jobs.json", JobDTO.class, defaults));
     }
 
+    @Operation(summary = "List all pipeline jobs", description = "Returns a list of all configured crawling pipeline jobs and their latest execution state.")
+    @ApiResponse(responseCode = "200", description = "List of configured jobs successfully retrieved")
     @GetMapping
     public List<JobDTO> getAllJobs() {
         return jobs;
     }
 
+    @Operation(summary = "Get pipeline job by ID", description = "Retrieves details and status of a specific crawling job by its identifier.")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Job details successfully retrieved"),
+        @ApiResponse(responseCode = "404", description = "Job not found")
+    })
     @GetMapping("/{id}")
-    public ResponseEntity<JobDTO> getJob(@PathVariable String id) {
+    public ResponseEntity<JobDTO> getJob(
+            @Parameter(description = "Job unique identifier", example = "1") @PathVariable String id) {
         return jobs.stream()
                 .filter(j -> j.id().equals(id))
                 .findFirst()
@@ -85,6 +101,11 @@ public class JobController {
                 .orElse(ResponseEntity.notFound().build());
     }
 
+    @Operation(summary = "Create or update a pipeline job", description = "Creates a new crawling job or updates an existing job definition.")
+    @ApiResponses({
+        @ApiResponse(responseCode = "201", description = "Job created or updated successfully"),
+        @ApiResponse(responseCode = "400", description = "Invalid job configuration or unrecognized pipeline mode")
+    })
     @PostMapping
     public ResponseEntity<Void> saveJob(@RequestBody JobDTO job) {
         log.info("Saving job: {}", job.name());
@@ -142,16 +163,22 @@ public class JobController {
         return ResponseEntity.status(201).build();
     }
 
+    @Operation(summary = "Delete a pipeline job", description = "Removes a pipeline job definition by its identifier.")
+    @ApiResponse(responseCode = "200", description = "Job successfully deleted")
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> deleteJob(@PathVariable String id) {
+    public ResponseEntity<Void> deleteJob(
+            @Parameter(description = "Job unique identifier", example = "1") @PathVariable String id) {
         log.info("Deleting job: {}", id);
         jobs.removeIf(j -> j.id().equals(id));
         PersistenceHelper.save("jobs.json", jobs);
         return ResponseEntity.ok().build();
     }
 
+    @Operation(summary = "Start a pipeline job", description = "Initiates asynchronous crawling and ingestion execution for the specified job on a Java 25 Virtual Thread.")
+    @ApiResponse(responseCode = "200", description = "Job start signal accepted and initiated")
     @PostMapping("/{id}/start")
-    public ResponseEntity<Void> startJob(@PathVariable String id) {
+    public ResponseEntity<Void> startJob(
+            @Parameter(description = "Job unique identifier", example = "1") @PathVariable String id) {
         log.info("Starting job {}", id);
         updateJobStatus(id, "Running");
 
@@ -515,15 +542,21 @@ public class JobController {
         return ResponseEntity.ok().build();
     }
 
+    @Operation(summary = "Stop a pipeline job", description = "Signals a running pipeline job to terminate execution gracefully.")
+    @ApiResponse(responseCode = "200", description = "Job stop signal processed")
     @PostMapping("/{id}/stop")
-    public ResponseEntity<Void> stopJob(@PathVariable String id) {
+    public ResponseEntity<Void> stopJob(
+            @Parameter(description = "Job unique identifier", example = "1") @PathVariable String id) {
         log.info("Stopping job {}", id);
         updateJobStatus(id, "Finished");
         return ResponseEntity.ok().build();
     }
 
+    @Operation(summary = "Pause a pipeline job", description = "Signals a running pipeline job to pause execution.")
+    @ApiResponse(responseCode = "200", description = "Job pause signal processed")
     @PostMapping("/{id}/pause")
-    public ResponseEntity<Void> pauseJob(@PathVariable String id) {
+    public ResponseEntity<Void> pauseJob(
+            @Parameter(description = "Job unique identifier", example = "1") @PathVariable String id) {
         log.info("Pausing job {}", id);
         updateJobStatus(id, "Paused");
         return ResponseEntity.ok().build();
@@ -641,9 +674,13 @@ public class JobController {
         }
     }
 
+    @Schema(description = "Auto-Narrativization Copilot transformation configuration")
     public static record NarrativizationConfig(
+        @Schema(description = "Whether LLM-driven narrativization is active for this job", example = "false")
         boolean enabled,
+        @Schema(description = "Mustache narrative prompt template", example = "# {{title}}\n{{summary}}")
         String template,
+        @Schema(description = "Connector type hint for template schema extraction", example = "FileSystem")
         String connectorType
     ) {
         public static NarrativizationConfig disabled() {
@@ -651,19 +688,33 @@ public class JobController {
         }
     }
 
+    @Schema(description = "Pipeline job definition and execution status")
     public static record JobDTO(
+        @Schema(description = "Unique job identifier", example = "1")
         String id,
+        @Schema(description = "Human-readable job name", example = "Default_Job")
         String name,
+        @Schema(description = "Name of the configured repository connector", example = "FileSystem_Local")
         String repositoryConnector,
+        @Schema(description = "Name of the configured output connector", example = "PGVector_Output")
         String outputConnector,
+        @Schema(description = "Name of authority connector for ACL verification", example = "")
         String authorityConnector,
+        @Schema(description = "Root path or target repository resource", example = "/data")
         String path,
+        @Schema(description = "Job execution state (Ready, Running, Paused, Finished, Error)", example = "Ready")
         String status,
+        @Schema(description = "Current processing stage (Idle, Scanning, Extracting, Embedding, Writing, Completed, Failed)", example = "Idle")
         String currentStage,
+        @Schema(description = "Total number of documents processed", example = "0")
         long documents,
+        @Schema(description = "Timestamp of the last job execution", example = "N/A")
         String lastRun,
+        @Schema(description = "Name of the transformation connector or embedding provider", example = "Ollama_Embedding_Default")
         String transformationConnector,
+        @Schema(description = "Auto-Narrativization Copilot configuration")
         NarrativizationConfig narrativization,
+        @Schema(description = "Execution pipeline mode (RAG or MIGRATION)", example = "RAG")
         String pipelineMode
     ) {
         public JobDTO {
