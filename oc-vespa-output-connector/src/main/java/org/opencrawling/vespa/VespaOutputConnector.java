@@ -20,7 +20,6 @@ import ai.vespa.feed.client.OperationParameters;
 import ai.vespa.feed.client.Result;
 import org.opencrawling.core.text.TextExtractionService;
 import org.opencrawling.core.text.TextExtractionResult;
-import org.opencrawling.core.text.PipesForkTextExtractor;
 import org.opencrawling.core.connector.OutputConnector;
 import org.opencrawling.core.document.RepositoryDocument;
 import org.opencrawling.vespa.config.VespaOutputProperties;
@@ -73,7 +72,7 @@ public class VespaOutputConnector implements OutputConnector {
         this.mapper = mapper;
         this.embeddingModel = embeddingModel;
         this.textSplitter = TokenTextSplitter.builder().build();
-        this.textExtractionService = textExtractionService != null ? textExtractionService : new PipesForkTextExtractor();
+        this.textExtractionService = textExtractionService != null ? textExtractionService : TextExtractionService.noop();
     }
 
     public VespaOutputConnector(

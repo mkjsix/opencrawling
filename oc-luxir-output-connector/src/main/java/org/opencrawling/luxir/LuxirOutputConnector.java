@@ -17,7 +17,6 @@ package org.opencrawling.luxir;
 
 import org.opencrawling.core.connector.OutputConnector;
 import org.opencrawling.core.document.RepositoryDocument;
-import org.opencrawling.core.text.PipesForkTextExtractor;
 import org.opencrawling.core.text.TextExtractionResult;
 import org.opencrawling.core.text.TextExtractionService;
 import org.opencrawling.luxir.client.LuxirClient;
@@ -71,7 +70,7 @@ public class LuxirOutputConnector implements OutputConnector {
         this.properties = properties;
         this.embeddingModel = embeddingModel;
         this.textSplitter = TokenTextSplitter.builder().build();
-        this.textExtractionService = textExtractionService != null ? textExtractionService : new PipesForkTextExtractor();
+        this.textExtractionService = textExtractionService != null ? textExtractionService : TextExtractionService.noop();
     }
 
     @Override

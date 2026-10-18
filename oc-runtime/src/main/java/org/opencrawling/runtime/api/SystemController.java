@@ -24,11 +24,15 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import java.util.regex.Pattern;
 import org.opencrawling.core.text.TextExtractionProperties;
+import org.opencrawling.core.text.TextExtractionService;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.server.ResponseStatusException;
 import org.opencrawling.runtime.observability.TelemetryTraceStore;
 
 @RestController
@@ -36,20 +40,24 @@ import org.opencrawling.runtime.observability.TelemetryTraceStore;
 public class SystemController {
 
     private static final DateTimeFormatter logTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+    private static final Pattern VALID_HEAP_PATTERN = Pattern.compile("^-Xmx[0-9]+[kmgKMG]$");
     
     private SystemSettingsDTO settings;
     private final JdbcTemplate jdbcTemplate;
     private final TelemetryTraceStore traceStore;
     private final TextExtractionProperties textExtractionProperties;
+    private final TextExtractionService textExtractionService;
 
     @Autowired
     public SystemController(
             @Autowired(required = false) JdbcTemplate jdbcTemplate,
             @Autowired(required = false) TelemetryTraceStore traceStore,
-            @Autowired(required = false) TextExtractionProperties textExtractionProperties) {
+            @Autowired(required = false) TextExtractionProperties textExtractionProperties,
+            @Autowired(required = false) TextExtractionService textExtractionService) {
         this.jdbcTemplate = jdbcTemplate;
         this.traceStore = traceStore;
         this.textExtractionProperties = textExtractionProperties;
+        this.textExtractionService = textExtractionService;
         String defaultOllamaUrl = System.getenv().getOrDefault("SPRING_AI_OLLAMA_BASE_URL", "http://127.0.0.1:11434");
 
         boolean forkEnabled = textExtractionProperties != null ? textExtractionProperties.isForkEnabled() : true;
@@ -57,8 +65,13 @@ public class SystemController {
         String heap = (textExtractionProperties != null && textExtractionProperties.getJvmArgs() != null && !textExtractionProperties.getJvmArgs().isEmpty())
                 ? textExtractionProperties.getJvmArgs().get(0) : "-Xmx512m";
         int maxFiles = textExtractionProperties != null ? textExtractionProperties.getMaxFilesPerProcess() : 10000;
-        boolean extractEmbedded = textExtractionProperties != null ? textExtractionProperties.isExtractEmbedded() : false;
+        boolean extractEmbedded = textExtractionProperties != null ? textExtractionProperties.isExtractEmbedded() : true;
         int writeLimit = textExtractionProperties != null ? textExtractionProperties.getWriteLimit() : 20000000;
+        int numClients = textExtractionProperties != null ? textExtractionProperties.getNumClients() : 1;
+
+        String tikaVer = textExtractionService != null ? textExtractionService.getVersion() : "4.1.0";
+        String tikaEngine = textExtractionService != null ? textExtractionService.getEngineName()
+                : (forkEnabled ? "PipesForkParser (Process-Isolated)" : "In-Process Embedded Tika");
 
         SystemSettingsDTO defaultSettings = new SystemSettingsDTO(
             "Ollama",
@@ -75,15 +88,16 @@ public class SystemController {
             9862,
             "s3v",
             "claims",
-            "4.1.0",
-            forkEnabled ? "PipesForkParser (Process-Isolated)" : "In-Process Embedded Tika",
+            tikaVer,
+            tikaEngine,
             forkEnabled,
             timeoutMs,
             heap,
             maxFiles,
             true,
             extractEmbedded,
-            writeLimit
+            writeLimit,
+            numClients
         );
         this.settings = PersistenceHelper.loadObject("settings.json", SystemSettingsDTO.class, defaultSettings);
 
@@ -122,10 +136,15 @@ public class SystemController {
         status.put("postgres", pgStatus);
         status.put("redis", redisStatus);
         status.put("ollama", ollamaStatus);
-        status.put("tika", "UP");
-        status.put("tikaVersion", (settings != null && settings.tikaVersion() != null) ? settings.tikaVersion() : "4.1.0");
-        status.put("tikaEngine", (settings != null && settings.tikaForkEnabled() != null && settings.tikaForkEnabled()) 
-                ? "PipesForkParser (Process-Isolated)" : "In-Process Embedded Tika");
+        if (textExtractionService != null) {
+            status.put("tika", textExtractionService.isHealthy() ? "UP" : "DOWN");
+            status.put("tikaVersion", textExtractionService.getVersion());
+            status.put("tikaEngine", textExtractionService.getEngineName());
+        } else {
+            status.put("tika", "DISABLED");
+            status.put("tikaVersion", (settings != null && settings.tikaVersion() != null) ? settings.tikaVersion() : "N/A");
+            status.put("tikaEngine", "Disabled");
+        }
         status.put("totalIndexedDocs", String.valueOf(getActualDbDocCount()));
 
         if ("UP".equals(pgStatus) && "UP".equals(redisStatus) && "UP".equals(ollamaStatus)) {
@@ -308,7 +327,12 @@ public class SystemController {
                 textExtractionProperties.setTimeoutMs(newSettings.tikaTimeoutMs());
             }
             if (newSettings.tikaJvmHeap() != null && !newSettings.tikaJvmHeap().isBlank()) {
-                textExtractionProperties.setJvmArgs(new ArrayList<>(List.of(newSettings.tikaJvmHeap())));
+                String heap = newSettings.tikaJvmHeap().trim();
+                if (!VALID_HEAP_PATTERN.matcher(heap).matches()) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                            "Invalid JVM heap argument: '" + heap + "'. Expected pattern -Xmx<number>[k|m|g].");
+                }
+                textExtractionProperties.setJvmArgs(new ArrayList<>(List.of(heap)));
             }
             if (newSettings.tikaMaxFilesPerProcess() != null && newSettings.tikaMaxFilesPerProcess() > 0) {
                 textExtractionProperties.setMaxFilesPerProcess(newSettings.tikaMaxFilesPerProcess());
@@ -319,14 +343,18 @@ public class SystemController {
             if (newSettings.tikaWriteLimit() != null && newSettings.tikaWriteLimit() > 0) {
                 textExtractionProperties.setWriteLimit(newSettings.tikaWriteLimit());
             }
+            if (newSettings.tikaNumClients() != null && newSettings.tikaNumClients() > 0) {
+                textExtractionProperties.setNumClients(newSettings.tikaNumClients());
+            }
         }
         PersistenceHelper.save("settings.json", newSettings);
         InMemoryLogAppender.getLogs().add(formatLog("SUCCESS", "System settings updated: Model set to '" 
             + newSettings.ollamaModel() + "' (" + newSettings.vectorDimensions() + "d) via " 
             + newSettings.embeddingProvider() + ". Chunker: " + newSettings.chunkerType() 
             + " [Size: " + newSettings.chunkSize() + ", Overlap: " + newSettings.chunkOverlap() + "]"
-            + ". Tika 4.1.0 Fork: " + newSettings.tikaForkEnabled() + " (Timeout: " + newSettings.tikaTimeoutMs() + "ms, Heap: " + newSettings.tikaJvmHeap() + ")"));
-        return ResponseEntity.ok().build();
+            + ". Tika Fork: " + newSettings.tikaForkEnabled() + " (Timeout: " + newSettings.tikaTimeoutMs() + "ms, Heap: " + newSettings.tikaJvmHeap() + ", Clients: " + newSettings.tikaNumClients() + ")"));
+        InMemoryLogAppender.getLogs().add(formatLog("WARN", "Tika parser settings updated. Note: Reconfiguration of active child processes requires an application restart to take full effect."));
+        return ResponseEntity.ok().header("X-Requires-Restart", "true").build();
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
@@ -353,7 +381,8 @@ public class SystemController {
         Integer tikaMaxFilesPerProcess,
         Boolean tikaFallbackToEmbedded,
         Boolean tikaExtractEmbedded,
-        Integer tikaWriteLimit
+        Integer tikaWriteLimit,
+        Integer tikaNumClients
     ) {
         public SystemSettingsDTO {
             if (embeddingProvider == null) embeddingProvider = "Ollama";
@@ -379,8 +408,9 @@ public class SystemController {
             if (tikaJvmHeap == null || tikaJvmHeap.isBlank()) tikaJvmHeap = "-Xmx512m";
             if (tikaMaxFilesPerProcess == null || tikaMaxFilesPerProcess <= 0) tikaMaxFilesPerProcess = 10000;
             if (tikaFallbackToEmbedded == null) tikaFallbackToEmbedded = Boolean.TRUE;
-            if (tikaExtractEmbedded == null) tikaExtractEmbedded = Boolean.FALSE;
+            if (tikaExtractEmbedded == null) tikaExtractEmbedded = Boolean.TRUE;
             if (tikaWriteLimit == null || tikaWriteLimit <= 0) tikaWriteLimit = 20000000;
+            if (tikaNumClients == null || tikaNumClients <= 0) tikaNumClients = 1;
         }
     }
 

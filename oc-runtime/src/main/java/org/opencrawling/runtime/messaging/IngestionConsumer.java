@@ -17,7 +17,6 @@ package org.opencrawling.runtime.messaging;
 
 import org.opencrawling.core.text.TextExtractionService;
 import org.opencrawling.core.text.TextExtractionResult;
-import org.opencrawling.core.text.PipesForkTextExtractor;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.transformer.splitter.TokenTextSplitter;
 import org.opencrawling.runtime.config.KafkaConfig;
@@ -71,7 +70,7 @@ public class IngestionConsumer {
         this.claimCheckProperties = claimCheckProperties;
         this.traceStore = traceStore;
         this.textSplitter = TokenTextSplitter.builder().build();
-        this.textExtractionService = textExtractionService != null ? textExtractionService : new PipesForkTextExtractor();
+        this.textExtractionService = textExtractionService != null ? textExtractionService : TextExtractionService.noop();
     }
 
     @jakarta.annotation.PostConstruct
