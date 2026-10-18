@@ -44,6 +44,13 @@ compose() {
   docker compose -f oc-opensearch3-output-connector/docker/docker-compose-decoupled-with-opensearch.yml "$@"
 }
 
+cleanup() {
+  echo -e "\n${YELLOW}Tearing down OpenSearch decoupled test environment...${NC}"
+  compose down --remove-orphans >/dev/null 2>&1 || true
+  rm -f "${TEST_FILE:-}"
+}
+trap cleanup EXIT
+
 # Clean up any existing containers
 echo -e "${YELLOW}Cleaning up previous OpenSearch decoupled containers...${NC}"
 compose down --remove-orphans || true

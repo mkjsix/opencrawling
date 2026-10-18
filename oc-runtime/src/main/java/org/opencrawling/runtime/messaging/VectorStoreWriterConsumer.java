@@ -71,7 +71,9 @@ public class VectorStoreWriterConsumer {
      * {@code chunk_index} is at or past its {@code total_chunks}. A DELETE removes every row whose
      * {@code documentId} metadata equals the message's document id, from all four stores.
      */
-    @KafkaListener(topics = KafkaConfig.EMBEDDED_TOPIC_NAME)
+    @KafkaListener(
+            topics = KafkaConfig.EMBEDDED_TOPIC_NAME,
+            groupId = "${spring.kafka.consumer.writer-group-id:opencrawling-vector-group}")
     public void consume(DocumentEmbeddedMessage message) {
         log.info("Received embedded chunk for storage: {} (Dimensions: {})", message.chunkId(), 
             message.embedding() != null ? message.embedding().length : 0);

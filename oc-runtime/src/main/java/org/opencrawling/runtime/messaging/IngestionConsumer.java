@@ -78,7 +78,9 @@ public class IngestionConsumer {
         log.info("IngestionConsumer initialized successfully with ClaimCheckStore: {}!", claimCheckStore.getClass().getSimpleName());
     }
 
-    @KafkaListener(topics = KafkaConfig.TOPIC_NAME)
+    @KafkaListener(
+            topics = KafkaConfig.TOPIC_NAME,
+            groupId = "${spring.kafka.consumer.ingestion-group-id:opencrawling-ingestion-group}")
     public void consume(IngestionMessage message) {
         log.info("Received document message from Kafka: {}", message.documentId());
         if (message.pipelineMode() != null && message.pipelineMode().isMigration()) {

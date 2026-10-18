@@ -44,6 +44,12 @@ compose() {
   docker compose -f oc-milvus-output-connector/docker/docker-compose-decoupled-with-milvus.yml "$@"
 }
 
+cleanup() {
+  echo -e "\n${YELLOW}Tearing down Milvus decoupled test environment...${NC}"
+  compose down --remove-orphans >/dev/null 2>&1 || true
+}
+trap cleanup EXIT
+
 # Clean up any existing containers
 echo -e "${YELLOW}Cleaning up previous Milvus decoupled containers...${NC}"
 compose down --remove-orphans || true
