@@ -54,7 +54,7 @@ trap cleanup EXIT
 echo -e "${YELLOW}[STEP 1/5] Building oc-stormcrawler-bolt topology fat JAR with Maven...${NC}"
 mvn clean package -pl oc-stormcrawler-bolt -DskipTests
 
-TOPOLOGY_JAR="oc-stormcrawler-bolt/target/oc-stormcrawler-bolt-1.0.0-SNAPSHOT-topology.jar"
+TOPOLOGY_JAR="oc-stormcrawler-bolt/target/oc-stormcrawler-bolt-1.0.4-SNAPSHOT-topology.jar"
 if [ ! -f "$TOPOLOGY_JAR" ]; then
   echo -e "${RED}[ERROR] Expected topology JAR $TOPOLOGY_JAR was not found.${NC}"
   exit 1

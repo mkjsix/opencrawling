@@ -98,7 +98,7 @@ log_pass "All required tools are installed."
 # STEP 2: Build CLI JAR (if not present)
 # ------------------------------------------------------------------------------
 log_step "2" "Ensuring CLI executable JAR is available..."
-CLI_JAR="oc-cli/target/oc-cli-1.0.0-SNAPSHOT.jar"
+CLI_JAR="oc-cli/target/oc-cli-1.0.4-SNAPSHOT.jar"
 if [ ! -f "$CLI_JAR" ]; then
     echo -e "${CYAN}Building oc-cli executable JAR...${NC}"
     mvn clean package -pl oc-cli -DskipTests

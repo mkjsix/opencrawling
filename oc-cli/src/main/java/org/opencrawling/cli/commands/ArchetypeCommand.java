@@ -77,12 +77,12 @@ public class ArchetypeCommand implements Runnable {
                             
                             <groupId>%s</groupId>
                             <artifactId>%s</artifactId>
-                            <version>1.0.0-SNAPSHOT</version>
+                            <version>1.0.4-SNAPSHOT</version>
                             <name>%s</name>
 
                             <properties>
                                 <java.version>25</java.version>
-                                <opencrawling.version>1.0.0-SNAPSHOT</opencrawling.version>
+                                <opencrawling.version>1.0.4-SNAPSHOT</opencrawling.version>
                             </properties>
 
                             <dependencies>

@@ -182,7 +182,7 @@ The **OpenCrawling CLI** (`oc-cli`, binary `oc`) is a terminal-native, enterpris
 mvn clean package -pl oc-cli
 
 # Run CLI commands
-java --enable-preview -jar oc-cli/target/oc-cli-1.0.0-SNAPSHOT.jar system status
+java --enable-preview -jar oc-cli/target/oc-cli-1.0.4-SNAPSHOT.jar system status
 ```
 
 ### 🐳 Docker Container Execution
@@ -445,30 +445,30 @@ OpenCrawling provides an official suite of **Maven Archetypes** under `opencrawl
 mvn archetype:generate \
   -DarchetypeGroupId=org.opencrawling.archetypes \
   -DarchetypeArtifactId=opencrawling-archetype-repository-connector \
-  -DarchetypeVersion=1.0.0-SNAPSHOT \
+  -DarchetypeVersion=1.0.4-SNAPSHOT \
   -DgroupId=org.opencrawling.connectors \
   -DartifactId=opencrawling-repository-sample \
-  -Dversion=1.0.0-SNAPSHOT \
+  -Dversion=1.0.4-SNAPSHOT \
   -DconnectorName=SampleRepositoryConnector
 
 # Generate an Output Connector (Vector Store / Destination)
 mvn archetype:generate \
   -DarchetypeGroupId=org.opencrawling.archetypes \
   -DarchetypeArtifactId=opencrawling-archetype-output-connector \
-  -DarchetypeVersion=1.0.0-SNAPSHOT \
+  -DarchetypeVersion=1.0.4-SNAPSHOT \
   -DgroupId=org.opencrawling.connectors \
   -DartifactId=opencrawling-output-sample \
-  -Dversion=1.0.0-SNAPSHOT \
+  -Dversion=1.0.4-SNAPSHOT \
   -DconnectorName=SampleOutputConnector
 
 # Generate a Transformation Connector (Data Processing / Enrichment)
 mvn archetype:generate \
   -DarchetypeGroupId=org.opencrawling.archetypes \
   -DarchetypeArtifactId=opencrawling-archetype-transformation-connector \
-  -DarchetypeVersion=1.0.0-SNAPSHOT \
+  -DarchetypeVersion=1.0.4-SNAPSHOT \
   -DgroupId=org.opencrawling.connectors \
   -DartifactId=opencrawling-transformation-sample \
-  -Dversion=1.0.0-SNAPSHOT \
+  -Dversion=1.0.4-SNAPSHOT \
   -DconnectorName=SampleTransformationConnector
 ```
 

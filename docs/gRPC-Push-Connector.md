@@ -141,7 +141,7 @@ grpcurl -plaintext 127.0.0.1:9096 opencrawling.push.v1.OisPushService/Ping
 ```json
 {
   "status": "UP",
-  "version": "1.0.0-SNAPSHOT",
+  "version": "1.0.4-SNAPSHOT",
   "systemLoad": 0.12
 }
 ```

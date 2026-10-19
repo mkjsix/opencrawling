@@ -103,7 +103,7 @@ COPY oc-runtime/src/ /app/oc-runtime/src/
 
 # Build and package the application
 RUN mvn clean package -pl oc-runtime -am -DskipTests
-RUN java -Djarmode=tools -jar /app/oc-runtime/target/oc-runtime-1.0.0-SNAPSHOT.jar extract --destination /app/extracted
+RUN java -Djarmode=tools -jar /app/oc-runtime/target/oc-runtime-*.jar extract --destination /app/extracted
 
 # Runtime stage
 FROM eclipse-temurin:25-jre-alpine
@@ -111,7 +111,7 @@ WORKDIR /app
 
 # Copy the extracted thin jar and dependency libraries from the builder stage
 COPY --from=builder /app/extracted/lib ./lib
-COPY --from=builder /app/extracted/oc-runtime-1.0.0-SNAPSHOT.jar app.jar
+COPY --from=builder /app/extracted/oc-runtime-*.jar app.jar
 
 # Expose the ports the backend runs on (8080 HTTP/REST, 9095 gRPC Transport, 9096 gRPC Push Connector)
 EXPOSE 8080 9095 9096
