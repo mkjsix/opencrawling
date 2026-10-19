@@ -297,5 +297,225 @@ class OpenCrawlingCliTest {
             serverManager.stop();
         }
     }
+
+    private static final String SAMPLE_OPENAPI_31_JSON = """
+            {
+              "openapi": "3.1.0",
+              "info": {
+                "title": "OpenCrawling Runtime REST API",
+                "version": "1.0.0",
+                "license": {
+                  "name": "Apache License 2.0",
+                  "url": "https://www.apache.org/licenses/LICENSE-2.0"
+                }
+              },
+              "tags": [
+                { "name": "Pipeline & Jobs", "description": "Job orchestration" },
+                { "name": "OIS Direct Ingestion", "description": "Direct OIS push" }
+              ],
+              "paths": {
+                "/api/jobs": {
+                  "get": {
+                    "tags": ["Pipeline & Jobs"],
+                    "operationId": "listJobs",
+                    "summary": "List all configured jobs",
+                    "responses": {
+                      "200": { "description": "Jobs retrieved" }
+                    }
+                  },
+                  "post": {
+                    "tags": ["Pipeline & Jobs"],
+                    "operationId": "createJob",
+                    "summary": "Create a new crawling job",
+                    "requestBody": {
+                      "content": {
+                        "application/json": {
+                          "schema": { "$ref": "#/components/schemas/JobDTO" }
+                        }
+                      }
+                    },
+                    "responses": {
+                      "200": { "description": "Job created" }
+                    }
+                  }
+                },
+                "/api/v1/ingest/ois/{jobId}": {
+                  "post": {
+                    "tags": ["OIS Direct Ingestion"],
+                    "operationId": "ingestOisDocument",
+                    "summary": "Direct Ingestion of OIS Document",
+                    "parameters": [
+                      {
+                        "name": "jobId",
+                        "in": "path",
+                        "required": true,
+                        "description": "Target Job ID",
+                        "schema": { "type": "string" }
+                      }
+                    ],
+                    "security": [
+                      { "OisTokenAuth": [] }
+                    ],
+                    "responses": {
+                      "200": { "description": "Accepted" }
+                    }
+                  }
+                }
+              },
+              "components": {
+                "securitySchemes": {
+                  "OisTokenAuth": {
+                    "type": "http",
+                    "scheme": "bearer",
+                    "bearerFormat": "Token"
+                  }
+                },
+                "schemas": {
+                  "JobDTO": {
+                    "type": "object",
+                    "description": "Configuration and status for a crawling job",
+                    "required": ["id", "name"],
+                    "properties": {
+                      "id": { "type": "string", "description": "Job identifier" },
+                      "name": { "type": "string", "description": "Job display name" },
+                      "pipelineMode": { "type": "string", "description": "RAG or MIGRATION" }
+                    }
+                  }
+                }
+              }
+            }
+            """;
+
+    @Test
+    void testOpenApiCommandHelp() {
+        CommandLine cmd = new CommandLine(new OpenCrawlingCliCommand());
+        int exitCode = cmd.execute("openapi", "--help");
+        assertEquals(0, exitCode);
+        String out = outContent.toString();
+        assertTrue(out.contains("OpenAPI 3.1 contract management"));
+        assertTrue(out.contains("status"));
+        assertTrue(out.contains("export"));
+        assertTrue(out.contains("endpoints"));
+        assertTrue(out.contains("schema"));
+        assertTrue(out.contains("validate"));
+        assertTrue(out.contains("diff"));
+        assertTrue(out.contains("tools"));
+        assertTrue(out.contains("ui"));
+    }
+
+    @Test
+    void testOpenApiOfflineCommandsValidateEndpointsSchemaDiffToolsAndExport() throws Exception {
+        java.io.File baseFile = java.io.File.createTempFile("oc-openapi-base", ".json");
+        baseFile.deleteOnExit();
+        java.nio.file.Files.writeString(baseFile.toPath(), SAMPLE_OPENAPI_31_JSON);
+
+        // 1. oc openapi validate --strict
+        outContent.reset();
+        assertEquals(0, new CommandLine(new OpenCrawlingCliCommand())
+                .execute("openapi", "validate", "--file", baseFile.getAbsolutePath(), "--strict"));
+        assertTrue(outContent.toString().contains("OpenAPI 3.1.0 Specification is valid"));
+
+        // 2. oc openapi export to YAML and validate the YAML file
+        java.io.File yamlFile = java.io.File.createTempFile("oc-openapi-export", ".yaml");
+        yamlFile.deleteOnExit();
+        outContent.reset();
+        assertEquals(0, new CommandLine(new OpenCrawlingCliCommand())
+                .execute("openapi", "export", "--file", baseFile.getAbsolutePath(),
+                        "--format", "yaml", "--output", yamlFile.getAbsolutePath()));
+        assertTrue(outContent.toString().contains("Exported OpenAPI 3.1.0 specification"));
+
+        outContent.reset();
+        assertEquals(0, new CommandLine(new OpenCrawlingCliCommand())
+                .execute("openapi", "validate", "--file", yamlFile.getAbsolutePath(), "--strict"));
+        assertTrue(outContent.toString().contains("OpenAPI 3.1.0 Specification is valid"));
+
+        // 3. oc openapi endpoints with tag filter
+        outContent.reset();
+        assertEquals(0, new CommandLine(new OpenCrawlingCliCommand())
+                .execute("openapi", "endpoints", "--file", baseFile.getAbsolutePath(), "--tag", "OIS Direct Ingestion"));
+        assertTrue(outContent.toString().contains("/api/v1/ingest/ois/{jobId}"));
+        assertTrue(outContent.toString().contains("OisTokenAuth"));
+
+        // 4. oc openapi schema --name JobDTO & --list
+        outContent.reset();
+        assertEquals(0, new CommandLine(new OpenCrawlingCliCommand())
+                .execute("openapi", "schema", "--file", baseFile.getAbsolutePath(), "--name", "JobDTO"));
+        assertTrue(outContent.toString().contains("pipelineMode"));
+
+        outContent.reset();
+        assertEquals(0, new CommandLine(new OpenCrawlingCliCommand())
+                .execute("openapi", "schema", "--file", baseFile.getAbsolutePath(), "--list"));
+        assertTrue(outContent.toString().contains("JobDTO"));
+
+        // 5. oc openapi tools (openai, gemini, anthropic, mcp)
+        for (String provider : new String[]{"openai", "gemini", "anthropic", "mcp"}) {
+            outContent.reset();
+            assertEquals(0, new CommandLine(new OpenCrawlingCliCommand())
+                    .execute("openapi", "tools", "--file", baseFile.getAbsolutePath(), "--provider", provider));
+            assertTrue(outContent.toString().contains("createJob"));
+        }
+
+        // 6. oc openapi diff (identical -> 0 changes)
+        outContent.reset();
+        assertEquals(0, new CommandLine(new OpenCrawlingCliCommand())
+                .execute("openapi", "diff", "--base", baseFile.getAbsolutePath(),
+                        "--target", yamlFile.getAbsolutePath(), "--fail-on-breaking"));
+        assertTrue(outContent.toString().contains("No contract differences detected"));
+
+        // 7. oc openapi diff with breaking change -> exit code 1 with --fail-on-breaking
+        String brokenTargetJson = SAMPLE_OPENAPI_31_JSON.replace("\"/api/jobs\"", "\"/api/v2/jobs\"");
+        java.io.File breakingFile = java.io.File.createTempFile("oc-openapi-breaking", ".json");
+        breakingFile.deleteOnExit();
+        java.nio.file.Files.writeString(breakingFile.toPath(), brokenTargetJson);
+
+        outContent.reset();
+        assertEquals(1, new CommandLine(new OpenCrawlingCliCommand())
+                .execute("openapi", "diff", "--base", baseFile.getAbsolutePath(),
+                        "--target", breakingFile.getAbsolutePath(), "--fail-on-breaking"));
+        assertTrue(outContent.toString().contains("BREAKING"));
+
+        // 8. oc openapi ui
+        outContent.reset();
+        assertEquals(0, new CommandLine(new OpenCrawlingCliCommand())
+                .execute("openapi", "ui", "--url", "http://localhost:8080"));
+        assertTrue(outContent.toString().contains("http://localhost:8080/swagger-ui.html"));
+    }
+
+    @Test
+    void testOpenApiStatusAndLiveExportAgainstMockHttpServer() throws Exception {
+        com.sun.net.httpserver.HttpServer httpServer = com.sun.net.httpserver.HttpServer.create(new java.net.InetSocketAddress(0), 0);
+        int port = httpServer.getAddress().getPort();
+        httpServer.createContext("/v3/api-docs", exchange -> {
+            byte[] bytes = SAMPLE_OPENAPI_31_JSON.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().set("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, bytes.length);
+            exchange.getResponseBody().write(bytes);
+            exchange.close();
+        });
+        httpServer.createContext("/swagger-ui.html", exchange -> {
+            byte[] bytes = "<html>Swagger</html>".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, bytes.length);
+            exchange.getResponseBody().write(bytes);
+            exchange.close();
+        });
+        httpServer.start();
+        try {
+            String url = "http://127.0.0.1:" + port;
+            outContent.reset();
+            assertEquals(0, new CommandLine(new OpenCrawlingCliCommand())
+                    .execute("openapi", "status", "--url", url));
+            String out = outContent.toString();
+            assertTrue(out.contains("OpenCrawling Runtime REST API"));
+            assertTrue(out.contains("2 paths / 3 operations"));
+
+            outContent.reset();
+            assertEquals(0, new CommandLine(new OpenCrawlingCliCommand())
+                    .execute("openapi", "validate", "--url", url, "--strict"));
+            assertTrue(outContent.toString().contains("OpenAPI 3.1.0 Specification is valid"));
+        } finally {
+            httpServer.stop(0);
+        }
+    }
 }
+
 

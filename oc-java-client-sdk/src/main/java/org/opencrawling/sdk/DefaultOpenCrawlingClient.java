@@ -33,6 +33,7 @@ public class DefaultOpenCrawlingClient implements OpenCrawlingClient {
     private final ObservabilityClient observabilityClient;
     private final NarrativizationCopilotClient narrativizationCopilotClient;
     private final ReportClient reportClient;
+    private final OpenApiClient openApiClient;
 
     public DefaultOpenCrawlingClient(
             HttpClient httpClient,
@@ -48,6 +49,7 @@ public class DefaultOpenCrawlingClient implements OpenCrawlingClient {
         this.observabilityClient = new DefaultObservabilityClient(transport);
         this.narrativizationCopilotClient = new DefaultNarrativizationCopilotClient(transport);
         this.reportClient = new DefaultReportClient(transport);
+        this.openApiClient = new DefaultOpenApiClient(transport);
     }
 
     @Override
@@ -78,5 +80,10 @@ public class DefaultOpenCrawlingClient implements OpenCrawlingClient {
     @Override
     public ReportClient reports() {
         return reportClient;
+    }
+
+    @Override
+    public OpenApiClient openApi() {
+        return openApiClient;
     }
 }
