@@ -26,7 +26,7 @@ BOLD='\033[1m'
 NC='\033[0m' # No Color
 
 PASSED_COUNT=0
-TOTAL_TESTS=13
+TOTAL_TESTS=16
 
 log_step() {
     echo -e "\n${BOLD}${CYAN}────────────────────────────────────────────────────────────────────────────────${NC}"
@@ -218,6 +218,30 @@ if [ -f "$ARCH_DIR/customdecoupledoutput-output-connector/pom.xml" ]; then
     log_pass "oc archetype init scaffolded project pom.xml at $ARCH_DIR"
 else
     log_fail "oc archetype init failed to produce pom.xml"
+    exit 1
+fi
+
+# 4.7 Live OpenAPI 3.1 Contract Management & Introspection ('oc openapi')
+echo -e "\n${CYAN}  [4.12] Probing live OpenAPI 3.1 contract & Swagger UI status ('oc openapi status')...${NC}"
+$RUN_CLI openapi status
+log_pass "oc openapi status verified live /v3/api-docs and /swagger-ui.html"
+
+echo -e "\n${CYAN}  [4.13] Exporting live OpenAPI 3.1 spec to YAML and validating contract ('oc openapi export' & 'oc openapi validate')...${NC}"
+DECOUPLED_OPENAPI_YAML="oc-cli/target/decoupled-openapi.yaml"
+rm -f "$DECOUPLED_OPENAPI_YAML"
+$RUN_CLI openapi export --format yaml --output "$DECOUPLED_OPENAPI_YAML"
+$RUN_CLI openapi validate --file "$DECOUPLED_OPENAPI_YAML"
+log_pass "oc openapi export & validate verified live OpenAPI 3.1 YAML specification"
+
+echo -e "\n${CYAN}  [4.14] Listing documented endpoints and exporting AI function-calling tools ('oc openapi endpoints' & 'oc openapi tools')...${NC}"
+$RUN_CLI openapi endpoints --tag "Pipeline & Jobs"
+DECOUPLED_TOOLS_JSON="oc-cli/target/decoupled-openapi-tools.json"
+rm -f "$DECOUPLED_TOOLS_JSON"
+$RUN_CLI openapi tools --provider openai --tag "Pipeline & Jobs" --output "$DECOUPLED_TOOLS_JSON"
+if [ -f "$DECOUPLED_TOOLS_JSON" ]; then
+    log_pass "oc openapi endpoints & tools exported AI agent tool definitions to $DECOUPLED_TOOLS_JSON"
+else
+    log_fail "oc openapi tools failed to write $DECOUPLED_TOOLS_JSON"
     exit 1
 fi
 

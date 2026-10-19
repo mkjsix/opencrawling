@@ -55,6 +55,11 @@ public interface OpenCrawlingClient extends AutoCloseable {
      */
     ReportClient reports();
 
+    /**
+     * Client for OpenAPI 3.1 contract retrieval, endpoint discovery, and Swagger UI health checks.
+     */
+    OpenApiClient openApi();
+
     @Override
     default void close() {
         // No-op default close for resources

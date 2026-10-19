@@ -41,7 +41,8 @@ import java.util.concurrent.Callable;
         SystemCommand.class,
         SchemaCommand.class,
         McfCommand.class,
-        ReportCommand.class
+        ReportCommand.class,
+        OpenApiCommand.class
     }
 )
 public class OpenCrawlingCliCommand implements Callable<Integer> {

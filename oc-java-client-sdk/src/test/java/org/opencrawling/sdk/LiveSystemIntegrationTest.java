@@ -129,6 +129,15 @@ class LiveSystemIntegrationTest {
             assertThat(tombstonePayload.content()).isNull();
             assertThat(tombstonePayload.metadata()).isNull();
             System.out.println("Live System SDK OIS Tombstone Payload Asserted: ID=" + tombstonePayload.id() + ", Action=" + tombstonePayload.action());
+
+            // 7. OpenAPI 3.1 Contract & Swagger UI Verification
+            OpenApiStatusSummary openApiStatus = client.openApi().checkStatus();
+            assertThat(openApiStatus).isNotNull();
+            assertThat(openApiStatus.specReachable()).isTrue();
+            assertThat(openApiStatus.operationCount()).isGreaterThan(0);
+            List<OpenApiEndpointSummary> endpoints = client.openApi().listEndpoints();
+            assertThat(endpoints).isNotEmpty();
+            System.out.println("Live System SDK OpenAPI 3.1 Status Asserted: " + openApiStatus.operationCount() + " operations, " + openApiStatus.schemaCount() + " schemas");
         }
     }
 }
