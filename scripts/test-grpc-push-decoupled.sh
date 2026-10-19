@@ -149,6 +149,10 @@ if [[ "$CONTENT" != *"$MARKER"* ]]; then
 fi
 echo -e "${GREEN}Verified vector chunk content in pgvector contains marker ${MARKER}${NC}"
 
+# 3b. Verify execution report was generated in /api/reports for the gRPC Push ingestion
+wait_until "execution report generated in /api/reports for gRPC Push" 30 \
+  sh -c "curl -sf '${BASE_URL}/api/reports' | grep -q 'exec-push-'"
+
 # 4. Push authenticated DELETE tombstone via oc push delete
 DELETE_OUT=$($RUN_CLI push delete \
   --host "${GRPC_HOST}" \

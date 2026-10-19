@@ -131,6 +131,16 @@ class ReportControllerTest {
         assertTrue(pqr.columns().contains("status"));
         assertTrue(pqr.columns().contains("doc_count"));
         assertEquals(2, pqr.rows().size());
+
+        // 7. POST /api/reports/query with trailing semicolon must also succeed
+        String parquetQueryWithTrailingSemicolon = "SELECT status, count(*) AS doc_count, avg(duration_ms) AS avg_duration_ms FROM read_parquet('" + summary.reportPathParquet() + "') GROUP BY status;";
+        ResponseEntity<?> semicolonQueryRes = controller.executeQuery(new ReportController.QueryRequest(parquetQueryWithTrailingSemicolon));
+        assertTrue(semicolonQueryRes.getStatusCode().is2xxSuccessful(), "Single-statement DuckDB query with trailing semicolon must succeed");
+
+        // 8. POST /api/reports/query with multi-statement internal semicolon must be rejected
+        ResponseEntity<?> multiStmtRes = controller.executeQuery(new ReportController.QueryRequest("SELECT 1; SELECT 2;"));
+        assertEquals(400, multiStmtRes.getStatusCode().value(), "Multi-statement query must be rejected");
+        assertTrue(String.valueOf(multiStmtRes.getBody()).contains("Multi-statement queries containing semicolons are forbidden"));
     }
 
     @Test

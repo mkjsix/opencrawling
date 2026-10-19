@@ -79,6 +79,9 @@ public class OisIngestController {
     private final JobOrchestrator jobOrchestrator;
     private final String token;
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private org.opencrawling.runtime.reporting.JobLedgerAccumulator ledgerAccumulator;
+
     public OisIngestController(JobController jobController, JobOrchestrator jobOrchestrator,
             @Value("${opencrawling.ingest.ois.token:}") String token) {
         this.jobController = jobController;
@@ -137,12 +140,51 @@ public class OisIngestController {
         }
         RepositoryDocument doc = toRepositoryDocument(ois);
 
+        long startTime = System.currentTimeMillis();
+        String execId = "exec-ois-" + java.util.UUID.randomUUID().toString().substring(0, 8);
+        String repoName = (job.repositoryConnector() != null && !job.repositoryConnector().isBlank()
+                && !job.repositoryConnector().equalsIgnoreCase("FileSystem_Local"))
+                ? job.repositoryConnector()
+                : "OisDirectIngestion";
+        String outName = (job.outputConnector() != null && !job.outputConnector().isBlank())
+                ? job.outputConnector()
+                : "PGVector_Output";
+        String jobName = (job.name() != null && !job.name().isBlank()) ? job.name() : ("Job #" + job.id());
+        String model = (job.transformationConnector() != null && !job.transformationConnector().isBlank())
+                ? job.transformationConnector()
+                : "mxbai-embed-large";
+        if (ledgerAccumulator != null) {
+            ledgerAccumulator.startExecution(job.id(), execId, jobName, org.opencrawling.core.pipeline.PipelineMode.RAG, repoName, outName);
+        }
+
         try {
             jobOrchestrator.publishDocument(doc, job.transformationConnector());
+            long durationMs = Math.max(1L, System.currentTimeMillis() - startTime);
+            if (ledgerAccumulator != null) {
+                int tokenCount = (doc.action() == DocumentAction.DELETE || ois.content() == null || ois.content().text() == null)
+                        ? 0
+                        : Math.max(1, ois.content().text().length() / 4);
+                int chunkCount = doc.action() == DocumentAction.DELETE ? 0 : Math.max(1, (int) Math.ceil(tokenCount / 500.0));
+                ledgerAccumulator.recordDocument(org.opencrawling.core.reporting.DocumentLedgerEntry.ragSuccess(
+                        job.id(), execId, doc.id(), doc.uri(), repoName, outName,
+                        durationMs, chunkCount, tokenCount, model, 1024, "vector_store"
+                ));
+                ledgerAccumulator.completeExecution(execId, true, Map.of("durationMs", durationMs, "embeddingModel", model));
+            }
+            jobController.recordPushExecution(job.id(), 1L, true);
         } catch (Exception e) {
             if (e instanceof InterruptedException) {
                 Thread.currentThread().interrupt();
             }
+            long durationMs = Math.max(1L, System.currentTimeMillis() - startTime);
+            if (ledgerAccumulator != null) {
+                ledgerAccumulator.recordDocument(org.opencrawling.core.reporting.DocumentLedgerEntry.failure(
+                        job.id(), execId, org.opencrawling.core.pipeline.PipelineMode.RAG, doc.id(), doc.uri(),
+                        repoName, outName, durationMs, "KAFKA_PUBLISH_ERROR", e.getMessage()
+                ));
+                ledgerAccumulator.completeExecution(execId, false, Map.of("durationMs", durationMs, "embeddingModel", model));
+            }
+            jobController.recordPushExecution(job.id(), 0L, false);
             log.error("Failed to publish OIS document {} for job {}", doc.id(), jobId, e);
             return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).build();
         }

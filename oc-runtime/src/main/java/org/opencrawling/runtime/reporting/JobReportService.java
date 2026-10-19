@@ -70,17 +70,25 @@ public class JobReportService {
         return new File(executionId).getName();
     }
 
+    public static String normalizeSql(String sql) {
+        if (sql == null) {
+            return null;
+        }
+        return sql.trim().replaceAll(";+\\s*$", "").trim();
+    }
+
     public static void validateReadOnlySql(String sql) {
-        if (sql == null || sql.isBlank()) {
+        String normalized = normalizeSql(sql);
+        if (normalized == null || normalized.isBlank()) {
             throw new IllegalArgumentException("SQL query must not be empty");
         }
-        if (sql.contains(";")) {
+        if (normalized.contains(";")) {
             throw new IllegalArgumentException("Multi-statement queries containing semicolons are forbidden");
         }
-        if (!READ_ONLY_PATTERN.matcher(sql).matches()) {
+        if (!READ_ONLY_PATTERN.matcher(normalized).matches()) {
             throw new IllegalArgumentException("Only read-only SELECT or WITH queries are permitted");
         }
-        if (BLOCKED_KEYWORDS.matcher(sql).find()) {
+        if (BLOCKED_KEYWORDS.matcher(normalized).find()) {
             throw new IllegalArgumentException("SQL query contains forbidden administrative or mutation keywords");
         }
     }
@@ -123,6 +131,12 @@ public class JobReportService {
             }
         }
 
+        if (accumulator != null) {
+            for (JobExecutionCompletedEvent event : accumulator.getAllCompletedEvents()) {
+                summariesByExecId.computeIfAbsent(event.executionId(), id -> toSummary(event));
+            }
+        }
+
         List<JobReportSummary> list = new ArrayList<>(summariesByExecId.values());
         // Sort descending by start time
         list.sort((a, b) -> b.startTime().compareTo(a.startTime()));
@@ -147,39 +161,51 @@ public class JobReportService {
             } catch (Exception ignored) {}
         }
 
-        JobExecutionCompletedEvent event = accumulator.getCompletedEvent(safeExecId);
-        if (event != null) {
-            long durationMs = java.time.Duration.between(event.startTime(), event.endTime()).toMillis();
-            String status = event.failedDocuments() == 0 ? "SUCCESS"
-                    : (event.successfulDocuments() > 0 ? "PARTIAL" : "FAILED");
-            return Optional.of(new JobReportSummary(
-                    event.jobId(),
-                    event.executionId(),
-                    event.jobName(),
-                    event.pipelineMode(),
-                    event.repositoryConnector(),
-                    event.outputConnector(),
-                    status,
-                    event.startTime(),
-                    event.endTime(),
-                    durationMs,
-                    event.totalDocuments(),
-                    event.successfulDocuments(),
-                    event.failedDocuments(),
-                    event.skippedDocuments(),
-                    (Long) event.summaryMetrics().get("totalChunks"),
-                    (Long) event.summaryMetrics().get("totalTokens"),
-                    (Double) event.summaryMetrics().get("estimatedEmbeddingCostUsd"),
-                    (String) event.summaryMetrics().get("embeddingModel"),
-                    (Long) event.summaryMetrics().get("totalBinaryBytes"),
-                    (Long) event.summaryMetrics().get("totalReclaimedBytes"),
-                    (Long) event.summaryMetrics().get("safePrunedCount"),
-                    (Long) event.summaryMetrics().get("verifiedChecksumCount"),
-                    null, null, null
-            ));
+        if (accumulator != null) {
+            JobExecutionCompletedEvent event = accumulator.getCompletedEvent(safeExecId);
+            if (event != null) {
+                return Optional.of(toSummary(event));
+            }
         }
 
         return Optional.empty();
+    }
+
+    private JobReportSummary toSummary(JobExecutionCompletedEvent event) {
+        long durationMs = java.time.Duration.between(event.startTime(), event.endTime()).toMillis();
+        String status = event.failedDocuments() == 0 ? "SUCCESS"
+                : (event.successfulDocuments() > 0 ? "PARTIAL" : "FAILED");
+        java.time.LocalDate date = java.time.LocalDate.ofInstant(event.startTime(), java.time.ZoneOffset.UTC);
+        String relativeParquet = String.format("mode=%s/year=%d/month=%02d/day=%02d/job_%s_exec_%s.parquet",
+                event.pipelineMode().name(), date.getYear(), date.getMonthValue(), date.getDayOfMonth(),
+                event.jobId(), event.executionId());
+        return new JobReportSummary(
+                event.jobId(),
+                event.executionId(),
+                event.jobName(),
+                event.pipelineMode(),
+                event.repositoryConnector(),
+                event.outputConnector(),
+                status,
+                event.startTime(),
+                event.endTime(),
+                durationMs,
+                event.totalDocuments(),
+                event.successfulDocuments(),
+                event.failedDocuments(),
+                event.skippedDocuments(),
+                (Long) event.summaryMetrics().get("totalChunks"),
+                (Long) event.summaryMetrics().get("totalTokens"),
+                (Double) event.summaryMetrics().get("estimatedEmbeddingCostUsd"),
+                (String) event.summaryMetrics().get("embeddingModel"),
+                (Long) event.summaryMetrics().get("totalBinaryBytes"),
+                (Long) event.summaryMetrics().get("totalReclaimedBytes"),
+                (Long) event.summaryMetrics().get("safePrunedCount"),
+                (Long) event.summaryMetrics().get("verifiedChecksumCount"),
+                relativeParquet,
+                String.format("manifest_%s.csv", event.executionId()),
+                String.format("summary_%s.json", event.executionId())
+        );
     }
 
     public PaginatedLedgerResponse getDocumentEntries(String executionId, String statusFilter, String query, int page, int size) {
@@ -310,7 +336,8 @@ public class JobReportService {
     }
 
     public QueryResult executeDuckDbQuery(String sql) throws Exception {
-        validateReadOnlySql(sql);
+        String cleanSql = normalizeSql(sql);
+        validateReadOnlySql(cleanSql);
 
         File reportsDir = properties.getStorage().resolveLocalDir();
 
@@ -336,7 +363,7 @@ public class JobReportService {
         }
         searchPaths.add(new File(".").getAbsolutePath());
 
-        String resolvedSql = resolveParquetPathInSql(sql, reportsDir, searchPaths);
+        String resolvedSql = resolveParquetPathInSql(cleanSql, reportsDir, searchPaths);
 
         try (Connection conn = DriverManager.getConnection("jdbc:duckdb:");
              Statement stmt = conn.createStatement()) {
@@ -577,7 +604,7 @@ public class JobReportService {
     }
 
     private List<DocumentLedgerEntry> loadEntriesFromParquet(File parquetFile) throws Exception {
-        String sql = "SELECT * FROM read_parquet('" + parquetFile.getAbsolutePath().replace("'", "''") + "');";
+        String sql = "SELECT * FROM read_parquet('" + parquetFile.getAbsolutePath().replace("'", "''") + "')";
         QueryResult qr = executeDuckDbQuery(sql);
         List<DocumentLedgerEntry> result = new ArrayList<>();
         Map<String, Integer> colIndex = new HashMap<>();

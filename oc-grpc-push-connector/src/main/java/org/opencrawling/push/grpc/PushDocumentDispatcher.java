@@ -30,4 +30,23 @@ public interface PushDocumentDispatcher {
      * @return response indicating acceptance, queueing, or rejection
      */
     PushDocumentResponse dispatch(PushDocumentRequest request);
+
+    /**
+     * Dispatches an incoming PushDocumentRequest associated with a streaming execution ID.
+     *
+     * @param request     the gRPC push request
+     * @param executionId the stream execution ID, or null for standalone unary push
+     * @return response indicating acceptance, queueing, or rejection
+     */
+    default PushDocumentResponse dispatch(PushDocumentRequest request, String executionId) {
+        return dispatch(request);
+    }
+
+    /**
+     * Completes and flushes audit reports for an active streaming push execution.
+     *
+     * @param executionId the stream execution ID
+     */
+    default void completeStreamExecution(String executionId) {
+    }
 }

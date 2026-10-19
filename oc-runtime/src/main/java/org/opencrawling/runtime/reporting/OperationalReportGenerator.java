@@ -58,19 +58,17 @@ public class OperationalReportGenerator {
     public void onJobExecutionCompleted(JobExecutionCompletedEvent event) {
         if (!properties.isEnabled()) return;
 
-        Thread.ofVirtual().name("operational-reporter-" + event.jobId()).start(() -> {
-            try {
-                if (properties.getFormats().isJson()) {
-                    generateJsonSummary(event);
-                }
-                if (properties.getFormats().isCsv()) {
-                    generateCsvManifest(event);
-                }
-            } catch (Exception e) {
-                log.error("Failed to generate operational reports for job {} [exec: {}]: {}",
-                        event.jobId(), event.executionId(), e.getMessage(), e);
+        try {
+            if (properties.getFormats().isJson()) {
+                generateJsonSummary(event);
             }
-        });
+            if (properties.getFormats().isCsv()) {
+                generateCsvManifest(event);
+            }
+        } catch (Exception e) {
+            log.error("Failed to generate operational reports for job {} [exec: {}]: {}",
+                    event.jobId(), event.executionId(), e.getMessage(), e);
+        }
     }
 
     public File generateJsonSummary(JobExecutionCompletedEvent event) throws Exception {

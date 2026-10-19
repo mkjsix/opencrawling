@@ -61,6 +61,7 @@ public class OisPushServiceImpl extends OisPushServiceGrpc.OisPushServiceImplBas
     @Override
     public StreamObserver<PushDocumentRequest> streamDocuments(StreamObserver<StreamSummaryResponse> responseObserver) {
         long startTime = System.currentTimeMillis();
+        String streamExecutionId = "exec-stream-" + java.util.UUID.randomUUID().toString().substring(0, 8);
         AtomicLong totalReceived = new AtomicLong(0);
         AtomicLong totalAccepted = new AtomicLong(0);
         AtomicLong totalRejected = new AtomicLong(0);
@@ -71,7 +72,7 @@ public class OisPushServiceImpl extends OisPushServiceGrpc.OisPushServiceImplBas
             public void onNext(PushDocumentRequest request) {
                 totalReceived.incrementAndGet();
                 try {
-                    PushDocumentResponse response = dispatcher.dispatch(request);
+                    PushDocumentResponse response = dispatcher.dispatch(request, streamExecutionId);
                     if (response.getStatus() == IngestionStatus.ACCEPTED || response.getStatus() == IngestionStatus.QUEUED) {
                         totalAccepted.incrementAndGet();
                     } else {
@@ -96,10 +97,12 @@ public class OisPushServiceImpl extends OisPushServiceGrpc.OisPushServiceImplBas
             @Override
             public void onError(Throwable t) {
                 log.warn("Error encountered during client-streaming ingestion: {}", t.getMessage());
+                dispatcher.completeStreamExecution(streamExecutionId);
             }
 
             @Override
             public void onCompleted() {
+                dispatcher.completeStreamExecution(streamExecutionId);
                 long duration = System.currentTimeMillis() - startTime;
                 StreamSummaryResponse summary = StreamSummaryResponse.newBuilder()
                         .setTotalReceived(totalReceived.get())
@@ -117,11 +120,12 @@ public class OisPushServiceImpl extends OisPushServiceGrpc.OisPushServiceImplBas
 
     @Override
     public StreamObserver<PushDocumentRequest> biDirectionalStream(StreamObserver<IngestionAck> responseObserver) {
+        String streamExecutionId = "exec-stream-" + java.util.UUID.randomUUID().toString().substring(0, 8);
         return new StreamObserver<>() {
             @Override
             public void onNext(PushDocumentRequest request) {
                 try {
-                    PushDocumentResponse response = dispatcher.dispatch(request);
+                    PushDocumentResponse response = dispatcher.dispatch(request, streamExecutionId);
                     boolean ok = response.getStatus() == IngestionStatus.ACCEPTED || response.getStatus() == IngestionStatus.QUEUED;
                     IngestionAck ack = IngestionAck.newBuilder()
                             .setDocumentId(response.getDocumentId())
@@ -151,10 +155,12 @@ public class OisPushServiceImpl extends OisPushServiceGrpc.OisPushServiceImplBas
             @Override
             public void onError(Throwable t) {
                 log.warn("Error encountered during bi-directional streaming ingestion: {}", t.getMessage());
+                dispatcher.completeStreamExecution(streamExecutionId);
             }
 
             @Override
             public void onCompleted() {
+                dispatcher.completeStreamExecution(streamExecutionId);
                 synchronized (responseObserver) {
                     responseObserver.onCompleted();
                 }

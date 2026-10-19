@@ -165,4 +165,80 @@ class RuntimePushDocumentDispatcherTest {
         assertEquals(IngestionStatus.ERROR_INTERNAL, response.getStatus());
         assertTrue(response.getMessage().contains("Kafka producer unavailable"));
     }
+
+    @Test
+    void testUnaryAndStreamingPushGenerateAuditReports(@org.junit.jupiter.api.io.TempDir java.io.File tempDir) throws Exception {
+        when(jobController.getJob("job-1")).thenReturn(ResponseEntity.ok(activeJob));
+        when(jobController.resolvePipelineMode(activeJob)).thenReturn(PipelineMode.RAG);
+
+        org.opencrawling.runtime.reporting.JobReportProperties reportProps = new org.opencrawling.runtime.reporting.JobReportProperties();
+        reportProps.getStorage().setLocalDir(tempDir.getAbsolutePath());
+        org.opencrawling.runtime.reporting.OperationalReportGenerator opGen =
+                new org.opencrawling.runtime.reporting.OperationalReportGenerator(reportProps);
+        org.opencrawling.runtime.reporting.ParquetJobReportGenerator parquetGen =
+                new org.opencrawling.runtime.reporting.ParquetJobReportGenerator(reportProps);
+
+        org.opencrawling.runtime.reporting.JobLedgerAccumulator accumulator =
+                new org.opencrawling.runtime.reporting.JobLedgerAccumulator(event -> {
+                    if (event instanceof org.opencrawling.core.event.JobExecutionCompletedEvent completed) {
+                        opGen.onJobExecutionCompleted(completed);
+                        parquetGen.onJobExecutionCompleted(completed);
+                    }
+                });
+        org.opencrawling.runtime.reporting.JobReportService reportService =
+                new org.opencrawling.runtime.reporting.JobReportService(reportProps, accumulator);
+
+        RuntimePushDocumentDispatcher reportingDispatcher =
+                new RuntimePushDocumentDispatcher(jobController, jobOrchestrator, claimCheckStore, properties, accumulator);
+
+        // 1. Unary push
+        PushDocumentRequest unaryReq = PushDocumentRequest.newBuilder()
+                .setJobId("job-1")
+                .setDocument(OisDocumentPayload.newBuilder()
+                        .setId("unary-doc-1")
+                        .setAction(org.opencrawling.push.v1.DocumentAction.UPSERT)
+                        .setTextContent("Unary pushed document content for reporting verification")
+                        .build())
+                .build();
+
+        PushDocumentResponse unaryResp = reportingDispatcher.dispatch(unaryReq);
+        assertEquals(IngestionStatus.ACCEPTED, unaryResp.getStatus());
+
+        java.util.List<org.opencrawling.core.reporting.JobReportSummary> summaries = reportService.getAllSummaries();
+        assertEquals(1, summaries.size(), "Unary push must generate an execution report summary");
+        org.opencrawling.core.reporting.JobReportSummary unarySummary = summaries.get(0);
+        assertEquals("job-1", unarySummary.jobId());
+        assertEquals("Grpc_Push_Connector", unarySummary.repositoryConnector());
+        assertEquals("PGVector_Output", unarySummary.outputConnector());
+        assertEquals(1L, unarySummary.totalDocuments());
+        assertEquals(1L, unarySummary.successfulDocuments());
+        verify(jobController).recordPushExecution("job-1", 1L, true);
+
+        // 2. Streaming push (2 documents aggregated into 1 stream execution report)
+        String streamExecId = "exec-stream-test01";
+        for (int i = 1; i <= 2; i++) {
+            PushDocumentRequest streamReq = PushDocumentRequest.newBuilder()
+                    .setJobId("job-1")
+                    .setDocument(OisDocumentPayload.newBuilder()
+                            .setId("stream-doc-" + i)
+                            .setAction(org.opencrawling.push.v1.DocumentAction.UPSERT)
+                            .setTextContent("Stream document #" + i)
+                            .build())
+                    .build();
+            assertEquals(IngestionStatus.ACCEPTED, reportingDispatcher.dispatch(streamReq, streamExecId).getStatus());
+        }
+        reportingDispatcher.completeStreamExecution(streamExecId);
+
+        org.opencrawling.core.reporting.JobReportSummary streamSummary = reportService.getSummary(streamExecId).orElseThrow();
+        assertEquals(2L, streamSummary.totalDocuments());
+        assertEquals(2L, streamSummary.successfulDocuments());
+        assertEquals(2, reportService.getDocumentEntries(streamExecId, "ALL", null, 0, 10).total());
+
+        // Verify DuckDB query over the generated Parquet report works
+        org.opencrawling.runtime.reporting.JobReportService.QueryResult qr = reportService.executeDuckDbQuery(
+                "SELECT status, count(*) AS doc_count FROM read_parquet('" + streamSummary.reportPathParquet() + "') GROUP BY status"
+        );
+        assertEquals(1, qr.rows().size());
+        verify(jobController).recordPushExecution("job-1", 2L, true);
+    }
 }

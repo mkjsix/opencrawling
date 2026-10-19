@@ -419,7 +419,13 @@ public class JobOrchestrator {
             ));
 
             if (ledgerAccumulator != null) {
-                ledgerAccumulator.completeExecution(currentExecutionId, true, Map.of("durationMs", duration));
+                boolean isPushConnector = repositoryConnector != null
+                        && repositoryConnector.getClass().getSimpleName().toLowerCase().contains("grpcpush");
+                if (isPushConnector && scanResults.isEmpty()) {
+                    ledgerAccumulator.cancelExecution(currentExecutionId);
+                } else {
+                    ledgerAccumulator.completeExecution(currentExecutionId, true, Map.of("durationMs", duration));
+                }
             }
 
             log.info("Job scanning phase completed in {} ms. Documents published to Kafka.", duration);

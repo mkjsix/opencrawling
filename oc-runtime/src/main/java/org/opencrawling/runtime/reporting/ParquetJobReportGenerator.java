@@ -81,14 +81,12 @@ public class ParquetJobReportGenerator {
             return;
         }
 
-        Thread.ofVirtual().name("parquet-reporter-" + event.jobId()).start(() -> {
-            try {
-                generateParquetReport(event);
-            } catch (Exception e) {
-                log.error("Failed to generate Parquet report for job {} [exec: {}]: {}",
-                        event.jobId(), event.executionId(), e.getMessage(), e);
-            }
-        });
+        try {
+            generateParquetReport(event);
+        } catch (Exception e) {
+            log.error("Failed to generate Parquet report for job {} [exec: {}]: {}",
+                    event.jobId(), event.executionId(), e.getMessage(), e);
+        }
     }
 
     public File generateParquetReport(JobExecutionCompletedEvent event) throws Exception {
@@ -107,6 +105,10 @@ public class ParquetJobReportGenerator {
         }
 
         File parquetFile = new File(targetDir, String.format("job_%s_exec_%s.parquet", event.jobId(), event.executionId()));
+        File crcFile = new File(targetDir, "." + parquetFile.getName() + ".crc");
+        if (crcFile.exists()) {
+            crcFile.delete();
+        }
         Path hadoopPath = new Path(parquetFile.toURI());
 
         CompressionCodecName codec = resolveCodec(properties.getFormats().getParquet().getCompression());
@@ -115,6 +117,7 @@ public class ParquetJobReportGenerator {
 
         try (ParquetWriter<GenericRecord> writer = AvroParquetWriter.<GenericRecord>builder(hadoopPath)
                 .withSchema(schema)
+                .withWriteMode(org.apache.parquet.hadoop.ParquetFileWriter.Mode.OVERWRITE)
                 .withCompressionCodec(codec)
                 .withRowGroupSize(properties.getFormats().getParquet().getRowGroupSizeBytes())
                 .withPageSize(properties.getFormats().getParquet().getPageSizeBytes())

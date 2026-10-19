@@ -618,7 +618,8 @@ public class JobController {
                     docCount,
                     lastRun,
                     job.transformationConnector(),
-                    job.narrativization()
+                    job.narrativization(),
+                    job.pipelineMode()
                 ));
                 break;
             }
@@ -642,12 +643,40 @@ public class JobController {
                     docCount,
                     LocalDateTime.now().format(formatter),
                     job.transformationConnector(),
-                    job.narrativization()
+                    job.narrativization(),
+                    job.pipelineMode()
                 ));
                 break;
             }
         }
         PersistenceHelper.save("jobs.json", jobs);
+    }
+
+    public void recordPushExecution(String id, long pushedDocs, boolean success) {
+        if (id == null || id.isBlank()) return;
+        for (int i = 0; i < jobs.size(); i++) {
+            JobDTO job = jobs.get(i);
+            if (job.id().equals(id)) {
+                long updatedDocs = Math.max(0L, job.documents()) + Math.max(0L, pushedDocs);
+                jobs.set(i, new JobDTO(
+                    job.id(),
+                    job.name(),
+                    job.repositoryConnector(),
+                    job.outputConnector(),
+                    job.authorityConnector(),
+                    job.path(),
+                    success ? "Finished" : "Error",
+                    success ? "Completed" : "Failed",
+                    updatedDocs,
+                    LocalDateTime.now().format(formatter),
+                    job.transformationConnector(),
+                    job.narrativization(),
+                    job.pipelineMode()
+                ));
+                PersistenceHelper.save("jobs.json", jobs);
+                break;
+            }
+        }
     }
 
     private long resolveExecutionDocCount(String executionId, long previousCount) {
