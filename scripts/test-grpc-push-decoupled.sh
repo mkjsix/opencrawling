@@ -15,12 +15,12 @@
 # limitations under the License.
 #
 # Integration test for the gRPC Push Repository Connector (OisPushService on port 9096)
-# in docker-compose-decoupled.yml:
-# 1. Ping health check and Admin API /api/connectors/check probe succeed.
-# 2. Unauthenticated PushDocument call is rejected with UNAUTHENTICATED.
-# 3. Authenticated UPSERT is accepted by oc-mcp-server, offloaded via Claim-Check,
+# and oc-cli `oc push` commands in docker-compose-decoupled.yml:
+# 1. Ping health check (`oc push ping`) and Admin API (`oc connector check --name Grpc_Push_Connector`) succeed.
+# 2. Unauthenticated `oc push upsert` call is rejected with UNAUTHENTICATED.
+# 3. Authenticated `oc push upsert` is accepted by oc-mcp-server, offloaded via Claim-Check,
 #    and written to pgvector by the decoupled consumer containers.
-# 4. Authenticated DELETE tombstone removes all vector chunks for the document ID.
+# 4. Authenticated `oc push delete` tombstone removes all vector chunks for the document ID.
 
 set -e
 
@@ -57,15 +57,6 @@ print_logs() {
   compose logs oc-mcp-server oc-ingestion-consumer oc-embedding-consumer oc-writer-consumer | tail -200
 }
 
-# Invoke GrpcPushClientCli inside oc-mcp-server-service or via local Maven
-grpc_cli() {
-  docker exec -i oc-mcp-server-service java -cp "app.jar:lib/*" \
-    org.opencrawling.push.grpc.GrpcPushClientCli \
-    --host 127.0.0.1 \
-    --port "${GRPC_PORT}" \
-    "$@" 2>/dev/null
-}
-
 # Rows of DOC_ID across the four pgvector tables
 rows() {
   docker exec -i postgres-vector-decoupled psql -U opencrawling -d opencrawling -t -A -c \
@@ -95,6 +86,11 @@ wait_until() {
 }
 
 echo -e "${YELLOW}=== gRPC Push Repository Connector, decoupled stack ===${NC}"
+echo -e "${YELLOW}Building oc-cli executable JAR...${NC}"
+mvn clean package -pl oc-cli -am -DskipTests -q
+CLI_JAR=$(ls oc-cli/target/oc-cli-*.jar 2>/dev/null | grep -v 'original' | head -n 1)
+RUN_CLI="java --enable-preview -jar ${CLI_JAR}"
+
 compose down --remove-orphans || true
 compose build
 compose up -d
@@ -103,16 +99,16 @@ wait_until "postgres-vector healthy" 180 \
   sh -c '[ "$(docker inspect -f "{{.State.Health.Status}}" postgres-vector-decoupled 2>/dev/null)" = "healthy" ]'
 wait_until "Ollama model pulled" 600 \
   sh -c '[ "$(docker inspect -f "{{.State.Status}} {{.State.ExitCode}}" ollama-model-puller-decoupled 2>/dev/null)" = "exited 0" ]'
-wait_until "gRPC Push listener ready on oc-mcp-server:${GRPC_PORT}" 180 \
-  sh -c "docker exec -i oc-mcp-server-service java -cp 'app.jar:lib/*' org.opencrawling.push.grpc.GrpcPushClientCli --host 127.0.0.1 --port '${GRPC_PORT}' --action ping 2>/dev/null | grep -q '\"status\":\"UP\"'"
+wait_until "gRPC Push listener ready on ${GRPC_HOST}:${GRPC_PORT}" 180 \
+  sh -c "$RUN_CLI push ping --host '${GRPC_HOST}' --port '${GRPC_PORT}' --format json 2>/dev/null | grep -q '\"status\":\"UP\"'"
 
-# Verify Admin REST API connector health check against the live gRPC Push listener
-wait_until "Admin REST API /api/connectors/check ready" 120 \
-  sh -c "curl -s -X POST '${BASE_URL}/api/connectors/check' -H 'Content-Type: application/json' -d '{\"name\":\"Grpc_Push_Connector\",\"type\":\"repository\",\"className\":\"org.opencrawling.push.grpc.GrpcPushRepositoryConnector\",\"maxConnections\":100,\"configuration\":{\"host\":\"127.0.0.1\",\"port\":\"${GRPC_PORT}\",\"token\":\"${OPENCRAWLING_GRPC_PUSH_TOKEN}\"}}' | grep -q '\"success\":true'"
+# Verify Admin REST API connector health check via oc-cli
+wait_until "Admin REST API connector check (oc connector check --name Grpc_Push_Connector)" 120 \
+  sh -c "$RUN_CLI connector check --name Grpc_Push_Connector --type repository --url '${BASE_URL}' --config host=127.0.0.1 --config port='${GRPC_PORT}' --config token='${OPENCRAWLING_GRPC_PUSH_TOKEN}' >/dev/null 2>&1"
 
 # 1. Verify unauthenticated PushDocument is rejected with UNAUTHENTICATED
 set +e
-UNAUTH_OUT=$(grpc_cli --action upsert --job-id "${JOB_ID}" --doc-id "${DOC_ID}" --content "unauthenticated test")
+UNAUTH_OUT=$(OPENCRAWLING_GRPC_PUSH_TOKEN="" $RUN_CLI push upsert --host "${GRPC_HOST}" --port "${GRPC_PORT}" --job-id "${JOB_ID}" --id "${DOC_ID}" --text "unauthenticated test" --format json 2>/dev/null)
 UNAUTH_RC=$?
 set -e
 if [ "$UNAUTH_RC" -eq 0 ] || ! echo "$UNAUTH_OUT" | grep -q '"grpcStatus":"UNAUTHENTICATED"'; then
@@ -122,16 +118,18 @@ if [ "$UNAUTH_RC" -eq 0 ] || ! echo "$UNAUTH_OUT" | grep -q '"grpcStatus":"UNAUT
 fi
 echo -e "${GREEN}Unauthenticated gRPC Push rejected (UNAUTHENTICATED): ok${NC}"
 
-# 2. Push authenticated UPSERT document via gRPC
-UPSERT_OUT=$(grpc_cli \
+# 2. Push authenticated UPSERT document via oc push upsert
+UPSERT_OUT=$($RUN_CLI push upsert \
+  --host "${GRPC_HOST}" \
+  --port "${GRPC_PORT}" \
   --token "${OPENCRAWLING_GRPC_PUSH_TOKEN}" \
-  --action upsert \
   --job-id "${JOB_ID}" \
-  --doc-id "${DOC_ID}" \
+  --id "${DOC_ID}" \
   --mime-type "text/plain" \
-  --content "OpenCrawling gRPC Push decoupled test document ${MARKER}" \
+  --text "OpenCrawling gRPC Push decoupled test document ${MARKER}" \
   --acl-allow "ROLE_USER" \
-  --metadata "title=gRPC Push Decoupled Test")
+  --metadata "title=gRPC Push Decoupled Test" \
+  --format json)
 
 if ! echo "$UPSERT_OUT" | grep -q '"accepted":true'; then
   echo -e "${RED}gRPC UPSERT was not accepted: ${UPSERT_OUT}${NC}"
@@ -151,12 +149,14 @@ if [[ "$CONTENT" != *"$MARKER"* ]]; then
 fi
 echo -e "${GREEN}Verified vector chunk content in pgvector contains marker ${MARKER}${NC}"
 
-# 4. Push authenticated DELETE tombstone via gRPC
-DELETE_OUT=$(grpc_cli \
+# 4. Push authenticated DELETE tombstone via oc push delete
+DELETE_OUT=$($RUN_CLI push delete \
+  --host "${GRPC_HOST}" \
+  --port "${GRPC_PORT}" \
   --token "${OPENCRAWLING_GRPC_PUSH_TOKEN}" \
-  --action delete \
   --job-id "${JOB_ID}" \
-  --doc-id "${DOC_ID}")
+  --id "${DOC_ID}" \
+  --format json)
 
 if ! echo "$DELETE_OUT" | grep -q '"accepted":true'; then
   echo -e "${RED}gRPC DELETE was not accepted: ${DELETE_OUT}${NC}"

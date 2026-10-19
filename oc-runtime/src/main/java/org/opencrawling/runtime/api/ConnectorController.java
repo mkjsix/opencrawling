@@ -303,10 +303,24 @@ public class ConnectorController {
         System.out.println("Checking connection for connector: " + connector.name() + " (" + connector.className() + ")");
         ConnectorDTO target = connector;
         if (target.className() == null && target.name() != null) {
-            target = storage.stream()
+            ConnectorDTO stored = storage.stream()
                     .filter(c -> c.name().equalsIgnoreCase(connector.name()))
                     .findFirst()
-                    .orElse(connector);
+                    .orElse(null);
+            if (stored != null) {
+                Map<String, String> mergedConfig = new HashMap<>(stored.configuration() != null ? stored.configuration() : Map.of());
+                if (connector.configuration() != null) {
+                    mergedConfig.putAll(connector.configuration());
+                }
+                target = new ConnectorDTO(
+                        stored.name(),
+                        connector.description() != null ? connector.description() : stored.description(),
+                        connector.type() != null ? connector.type() : stored.type(),
+                        stored.className(),
+                        connector.maxConnections() != null ? connector.maxConnections() : stored.maxConnections(),
+                        mergedConfig
+                );
+            }
         }
         ConnectionCheckResult result = checkerService.check(target);
         return ResponseEntity.ok(result);

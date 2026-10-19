@@ -63,6 +63,7 @@ RUN mvn dependency:go-offline -B -DexcludeArtifactIds=oc-grpc-api,oc-core,oc-obs
 COPY oc-grpc-api/src/ /app/oc-grpc-api/src/
 COPY oc-core/src/ /app/oc-core/src/
 COPY oc-observability/src/ /app/oc-observability/src/
+COPY oc-grpc-push-connector/src/ /app/oc-grpc-push-connector/src/
 COPY oc-java-client-sdk/src/ /app/oc-java-client-sdk/src/
 COPY oc-cli/src/ /app/oc-cli/src/
 COPY oc-mcf-migrator/src/ /app/oc-mcf-migrator/src/

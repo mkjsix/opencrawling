@@ -33,6 +33,7 @@ import java.util.concurrent.Callable;
     subcommands = {
         JobCommand.class,
         ConnectorCommand.class,
+        PushCommand.class,
         ArchetypeCommand.class,
         CopilotCommand.class,
         AIOpsCommand.class,
