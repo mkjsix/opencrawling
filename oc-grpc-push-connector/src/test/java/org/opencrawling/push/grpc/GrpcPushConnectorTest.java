@@ -192,4 +192,76 @@ class GrpcPushConnectorTest {
 
         assertEquals("ROLE_LEGAL", OisDocumentTranslator.extractAcl(protoSec));
     }
+
+    @Test
+    void testGrpcPushClientCliAgainstEmbeddedServer() {
+        GrpcPushProperties props = new GrpcPushProperties();
+        props.setEnabled(true);
+        props.setPort(0);
+        props.setToken("cli-test-token");
+
+        PushDocumentDispatcher dispatcher = request -> org.opencrawling.push.v1.PushDocumentResponse.newBuilder()
+                .setDocumentId(request.getDocument().getId())
+                .setStatus(org.opencrawling.push.v1.IngestionStatus.ACCEPTED)
+                .setMessage("Queued")
+                .setProcessedAt(System.currentTimeMillis())
+                .build();
+
+        GrpcPushServerManager manager = new GrpcPushServerManager(
+                props,
+                new OisPushServiceImpl(dispatcher),
+                new GrpcSecurityInterceptor(props),
+                new OpenTelemetryServerInterceptor());
+        manager.start();
+        try {
+            String portStr = String.valueOf(manager.getPort());
+
+            assertEquals(0, GrpcPushClientCli.execute(new String[]{
+                    "--host", "127.0.0.1", "--port", portStr, "--action", "ping"
+            }));
+
+            assertEquals(1, GrpcPushClientCli.execute(new String[]{
+                    "--host", "127.0.0.1", "--port", portStr, "--action", "upsert", "--doc-id", "doc-unauth"
+            }));
+
+            assertEquals(0, GrpcPushClientCli.execute(new String[]{
+                    "--host", "127.0.0.1", "--port", portStr,
+                    "--token", "cli-test-token",
+                    "--action", "upsert",
+                    "--job-id", "1",
+                    "--doc-id", "http://test/doc-1",
+                    "--content", "Hello from CLI",
+                    "--acl-allow", "group:eng,user:alice",
+                    "--metadata", "source=cli-test"
+            }));
+
+            assertEquals(0, GrpcPushClientCli.execute(new String[]{
+                    "--host", "127.0.0.1", "--port", portStr,
+                    "--token", "cli-test-token",
+                    "--action", "delete",
+                    "--job-id", "1",
+                    "--doc-id", "http://test/doc-1"
+            }));
+
+            assertEquals(0, GrpcPushClientCli.execute(new String[]{
+                    "--host", "127.0.0.1", "--port", portStr,
+                    "--token", "cli-test-token",
+                    "--action", "stream",
+                    "--job-id", "1",
+                    "--doc-id", "http://test/doc-2,http://test/doc-3",
+                    "--content", "Streamed content"
+            }));
+
+            assertEquals(0, GrpcPushClientCli.execute(new String[]{
+                    "--host", "127.0.0.1", "--port", portStr,
+                    "--token", "cli-test-token",
+                    "--action", "bidi",
+                    "--job-id", "1",
+                    "--doc-id", "http://test/doc-4,http://test/doc-5",
+                    "--content", "Bidi content"
+            }));
+        } finally {
+            manager.stop();
+        }
+    }
 }

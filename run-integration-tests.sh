@@ -104,7 +104,7 @@ ${BOLD}OPTIONS:${NC}
 ${BOLD}POSITIONAL ARGUMENTS:${NC}
   Any positional argument can be:
   1. A file path to a specific test script (e.g., ${CYAN}scripts/test-cli.sh${NC} or ${CYAN}test-alfresco-decoupled.sh${NC})
-  2. A filter keyword matching tests (e.g., ${CYAN}stormcrawler${NC}, ${CYAN}alfresco${NC}, ${CYAN}aps${NC}, ${CYAN}cmis${NC}, ${CYAN}seatunnel${NC}, ${CYAN}ozone${NC}, ${CYAN}migration${NC}, ${CYAN}reporting${NC}, ${CYAN}decoupled${NC}, ${CYAN}grpc${NC})
+  2. A filter keyword matching tests (e.g., ${CYAN}stormcrawler${NC}, ${CYAN}alfresco${NC}, ${CYAN}aps${NC}, ${CYAN}cmis${NC}, ${CYAN}seatunnel${NC}, ${CYAN}ozone${NC}, ${CYAN}migration${NC}, ${CYAN}reporting${NC}, ${CYAN}decoupled${NC}, ${CYAN}grpc${NC}, ${CYAN}grpc-push${NC})
 
 ${BOLD}EXAMPLES:${NC}
   ${DIM}# Run all integration tests${NC}
@@ -134,8 +134,11 @@ ${BOLD}EXAMPLES:${NC}
   ${DIM}# Run only SeaTunnel tests (matching test-seatunnel-*.sh)${NC}
   ./run-integration-tests.sh seatunnel
 
+  ${DIM}# Run only gRPC Push Repository Connector tests (matching test-grpc-push-*.sh)${NC}
+  ./run-integration-tests.sh grpc-push
+
   ${DIM}# Run a single specific test with live output streaming${NC}
-  ./run-integration-tests.sh -v scripts/test-alfresco-decoupled.sh
+  ./run-integration-tests.sh -v scripts/test-grpc-push-decoupled.sh
 
   ${DIM}# Run CLI and gRPC tests and stop immediately if any fails${NC}
   ./run-integration-tests.sh --fail-fast cli grpc
@@ -362,7 +365,7 @@ cleanup_on_interrupt() {
   fi
   # Clean up any lingering containers publishing integration test ports
   if command -v docker >/dev/null 2>&1; then
-    for p in 8080 8081 8088 9092 5432 5433 6379 11434 5801 9878 9879; do
+    for p in 8080 8081 8088 9092 9095 9096 5432 5433 6379 11434 5801 9878 9879; do
       local c_ids
       c_ids=$(docker ps --filter "publish=$p" -q 2>/dev/null || true)
       if [ -n "$c_ids" ]; then
@@ -452,7 +455,7 @@ for test_path in ${SELECTED_TESTS[@]+"${SELECTED_TESTS[@]}"}; do
 
   # Ensure common integration test ports are not blocked by lingering containers from aborted/prior runs
   if command -v docker >/dev/null 2>&1; then
-    for p in 8080 8081 8082 8085 8088 8983 9092 9095 9200 9600 9862 9878 9879 5432 5433 6333 6334 6379 11434 5801 19071 19530; do
+    for p in 8080 8081 8082 8085 8088 8983 9092 9095 9096 9200 9600 9862 9878 9879 5432 5433 6333 6334 6379 11434 5801 19071 19530; do
       c_ids=$(docker ps --filter "publish=$p" -q 2>/dev/null || true)
       if [ -n "$c_ids" ]; then
         docker stop $c_ids >/dev/null 2>&1 || true
