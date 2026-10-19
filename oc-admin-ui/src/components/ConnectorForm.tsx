@@ -107,6 +107,9 @@ const getConnectorIconInfo = (className: string) => {
   if (className.includes('StormCrawler') || className.includes('stormcrawler')) {
     return { icon: Globe, color: 'text-sky-400', bg: 'bg-sky-400/10', border: 'border-sky-500/20' }
   }
+  if (className.includes('GrpcPush') || className.includes('grpc-push') || className.includes('grpcPush')) {
+    return { icon: Network, color: 'text-violet-400', bg: 'bg-violet-400/10', border: 'border-violet-500/20' }
+  }
   if (className.includes('Ollama')) {
     return { icon: Cpu, color: 'text-purple-400', bg: 'bg-purple-400/10', border: 'border-purple-500/20' }
   }
@@ -245,6 +248,7 @@ export default function ConnectorForm() {
       { label: 'OASIS CMIS Repository (1.0 / 1.1)', value: 'org.opencrawling.cmis.CmisRepositoryConnector' },
       { label: 'Doxis Repository (Intelligent Content Automation)', value: 'org.opencrawling.doxis.DoxisRepositoryConnector' },
       { label: 'Relational Database (JDBC)', value: 'org.opencrawling.jdbc.JdbcRepositoryConnector' },
+      { label: 'gRPC Push Ingestion Connector', value: 'org.opencrawling.push.grpc.GrpcPushRepositoryConnector' },
     ],
     transformation: [
       { label: 'Ollama Embedding', value: 'org.opencrawling.embedding.OllamaEmbeddingConnector' },
@@ -1922,7 +1926,95 @@ export default function ConnectorForm() {
                     </div>
                   )}
 
+                  {/* gRPC Push Repository Connector */}
+                  {selectedClass === 'org.opencrawling.push.grpc.GrpcPushRepositoryConnector' && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 font-sans text-foreground">
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">Listener Port</label>
+                        <input 
+                          type="number"
+                          {...register('configuration.port', { required: true })}
+                          placeholder="9096"
+                          defaultValue="9096"
+                          className="w-full bg-background border border-border rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-primary/50 outline-none font-mono"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">Max Message Size (MB)</label>
+                        <input 
+                          type="number"
+                          {...register('configuration.maxMessageSizeMb', { required: true })}
+                          placeholder="64"
+                          defaultValue="64"
+                          className="w-full bg-background border border-border rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-primary/50 outline-none font-mono"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">Inline Binary Threshold (KB)</label>
+                        <input 
+                          type="number"
+                          {...register('configuration.inlineBinaryThresholdKb')}
+                          placeholder="512"
+                          defaultValue="512"
+                          className="w-full bg-background border border-border rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-primary/50 outline-none font-mono"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">Authentication Token (Optional Bearer Token)</label>
+                        <input 
+                          type="password"
+                          {...register('configuration.token')}
+                          placeholder="Bearer authentication token"
+                          className="w-full bg-background border border-border rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-primary/50 outline-none font-mono"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">Require Client Auth (mTLS)</label>
+                        <select 
+                          {...register('configuration.clientAuth')}
+                          defaultValue="NONE"
+                          className="w-full bg-background border border-border rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-primary/50 outline-none"
+                        >
+                          <option value="NONE">NONE - Plain TLS or Unauthenticated</option>
+                          <option value="OPTIONAL">OPTIONAL - Validate Client Cert if Presented</option>
+                          <option value="REQUIRE">REQUIRE - Enforce Mutual TLS (mTLS)</option>
+                        </select>
+                      </div>
+                      <div className="space-y-2 flex items-center pt-6">
+                        <label className="flex items-center gap-2 cursor-pointer text-sm font-medium">
+                          <input 
+                            type="checkbox"
+                            {...register('configuration.tlsEnabled')}
+                            className="rounded border-border text-primary focus:ring-primary w-4 h-4 bg-background"
+                          />
+                          Enable TLS Transport Encryption
+                        </label>
+                      </div>
 
+                      <div className="col-span-2 p-3 bg-violet-500/10 border border-violet-500/20 rounded-md text-xs text-violet-300 flex items-start gap-2">
+                        <Network className="w-4 h-4 flex-shrink-0 mt-0.5 text-violet-400" />
+                        <div>
+                          <p className="font-semibold text-violet-200">High-Throughput Binary Protobuf Ingestion</p>
+                          <p className="mt-0.5 opacity-90">
+                            The gRPC Push Connector accepts unary, client-streaming, and bi-directional streaming OIS Protobuf messages over HTTP/2.
+                            Incoming payloads exceeding the inline threshold are automatically offloaded to the ClaimCheckStore.
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="col-span-2 flex justify-end">
+                        <button
+                          type="button"
+                          onClick={handleCheckConnection}
+                          disabled={isCheckingConnection}
+                          className="btn-secondary flex items-center gap-2 text-xs py-1.5 px-3 border border-violet-500/30 text-violet-300 hover:bg-violet-500/10"
+                        >
+                          {isCheckingConnection ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ShieldCheck className="w-3.5 h-3.5 text-violet-400" />}
+                          Run Live Ping Diagnostic Test
+                        </button>
+                      </div>
+                    </div>
+                  )}
 
                   {/* PGVector Store */}
                   {selectedClass === 'org.opencrawling.vector.VectorOutputConnector' && (

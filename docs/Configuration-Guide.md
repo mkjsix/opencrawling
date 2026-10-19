@@ -54,6 +54,7 @@ OpenCrawling uses a Service Provider Interface (SPI) structure. To run a job, yo
 *   **Filesystem Connector**: Scans local or mounted directories recursively.
 *   **S3 Connector**: Pulls document objects from AWS S3 or MinIO buckets.
 *   **SharePoint Connector**: Utilizes Microsoft Graph delta queries to scan directories incrementally while extracting Active Directory SIDs.
+*   **gRPC Push Connector**: High-throughput streaming gRPC push ingestion gateway (Port 9096) supporting unary, streaming, and bi-directional OIS document ingestion with automatic claim-check offload. See [gRPC Push Connector](gRPC-Push-Connector).
 
 ### 2. Output Connectors (Destinations)
 *   **PgVector Store**: Connects to PostgreSQL using `pgvector` extension.

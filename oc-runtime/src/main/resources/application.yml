@@ -140,6 +140,21 @@ opencrawling:
       max-message-size: 33554432
       fallback-to-rest: true
       keep-alive-time-ms: 30000
+  connector:
+    grpc-push:
+      enabled: ${OPENCRAWLING_GRPC_PUSH_ENABLED:true}
+      port: ${OPENCRAWLING_GRPC_PUSH_PORT:9096}
+      max-message-size-mb: ${OPENCRAWLING_GRPC_PUSH_MAX_MESSAGE_MB:64}
+      inline-binary-threshold-kb: 512
+      token: ${OPENCRAWLING_GRPC_PUSH_TOKEN:}
+      tls:
+        enabled: ${OPENCRAWLING_GRPC_PUSH_TLS_ENABLED:false}
+        cert-chain-path: ""
+        private-key-path: ""
+        trust-cert-path: ""
+        client-auth: ${OPENCRAWLING_GRPC_PUSH_TLS_CLIENT_AUTH:NONE}
+      reflection:
+        enabled: true
   ingest:
     ois:
       # Bearer token for POST /api/v1/ingest/ois/{jobId}; the endpoint is disabled while it is empty

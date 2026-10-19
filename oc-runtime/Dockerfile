@@ -55,9 +55,10 @@ COPY oc-connector-archetypes/opencrawling-archetype-transformation-connector/pom
 COPY oc-java-client-sdk/pom.xml oc-java-client-sdk/
 COPY oc-cli/pom.xml oc-cli/
 COPY oc-mcf-migrator/pom.xml oc-mcf-migrator/
+COPY oc-grpc-push-connector/pom.xml oc-grpc-push-connector/
 
 # Download maven dependencies first (saves time on rebuilds if code changes but dependencies do not)
-RUN mvn dependency:go-offline -B -DexcludeArtifactIds=oc-grpc-api,oc-core,oc-observability,oc-filesystem-repository-connector,oc-alfresco-repository-connector,oc-iceberg-repository-connector,oc-flowable-repository-connector,oc-camunda-repository-connector,oc-aps-repository-connector,oc-cmis-repository-connector,oc-doxis-repository-connector,oc-jdbc-repository-connector,oc-stormcrawler-bolt,oc-stormcrawler-repository-connector,oc-vector-output-connector,oc-milvus-output-connector,oc-admin-ui,oc-runtime,oc-embedding-service,oc-opensearch2-output-connector,oc-opensearch3-output-connector,oc-qdrant-output-connector,oc-vespa-output-connector,oc-solr-output-connector,oc-luxir-output-connector,oc-doxis-client,oc-seatunnel-output-connector,oc-ozone-output-connector,opencrawling-connector-archetypes,opencrawling-archetype-repository-connector,opencrawling-archetype-output-connector,opencrawling-archetype-transformation-connector,oc-java-client-sdk,oc-cli,oc-mcf-migrator
+RUN mvn dependency:go-offline -B -DexcludeArtifactIds=oc-grpc-api,oc-core,oc-observability,oc-filesystem-repository-connector,oc-alfresco-repository-connector,oc-iceberg-repository-connector,oc-flowable-repository-connector,oc-camunda-repository-connector,oc-aps-repository-connector,oc-cmis-repository-connector,oc-doxis-repository-connector,oc-jdbc-repository-connector,oc-stormcrawler-bolt,oc-stormcrawler-repository-connector,oc-grpc-push-connector,oc-vector-output-connector,oc-milvus-output-connector,oc-admin-ui,oc-runtime,oc-embedding-service,oc-opensearch2-output-connector,oc-opensearch3-output-connector,oc-qdrant-output-connector,oc-vespa-output-connector,oc-solr-output-connector,oc-luxir-output-connector,oc-doxis-client,oc-seatunnel-output-connector,oc-ozone-output-connector,opencrawling-connector-archetypes,opencrawling-archetype-repository-connector,opencrawling-archetype-output-connector,opencrawling-archetype-transformation-connector,oc-java-client-sdk,oc-cli,oc-mcf-migrator
 
 # Copy all source files
 COPY oc-grpc-api/src/ /app/oc-grpc-api/src/
@@ -74,6 +75,7 @@ COPY oc-doxis-repository-connector/src/ /app/oc-doxis-repository-connector/src/
 COPY oc-jdbc-repository-connector/src/ /app/oc-jdbc-repository-connector/src/
 COPY oc-stormcrawler-bolt/src/ /app/oc-stormcrawler-bolt/src/
 COPY oc-stormcrawler-repository-connector/src/ /app/oc-stormcrawler-repository-connector/src/
+COPY oc-grpc-push-connector/src/ /app/oc-grpc-push-connector/src/
 COPY oc-vector-output-connector/src/ /app/oc-vector-output-connector/src/
 COPY oc-milvus-output-connector/src/ /app/oc-milvus-output-connector/src/
 COPY oc-opensearch2-output-connector/src/ /app/oc-opensearch2-output-connector/src/
@@ -111,8 +113,8 @@ WORKDIR /app
 COPY --from=builder /app/extracted/lib ./lib
 COPY --from=builder /app/extracted/oc-runtime-1.0.0-SNAPSHOT.jar app.jar
 
-# Expose the ports the backend runs on (8080 HTTP/REST, 9095 gRPC Transport)
-EXPOSE 8080 9095
+# Expose the ports the backend runs on (8080 HTTP/REST, 9095 gRPC Transport, 9096 gRPC Push Connector)
+EXPOSE 8080 9095 9096
 
 ENV TIKA_EXTRAS_DIR=/app/lib
 ENV OPENCRAWLING_TIKA_FORK_ENABLED=true

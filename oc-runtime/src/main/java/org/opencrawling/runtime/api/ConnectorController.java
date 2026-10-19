@@ -1,5 +1,5 @@
 /*
- * Copyright © 2026 the original author or authors (piergiorgio@apache.org)
+ * Copyright © ${year} the original author or authors (piergiorgio@apache.org)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -135,6 +135,14 @@ public class ConnectorController {
             Map.entry("incremental", "false"),
             Map.entry("stateDirectory", "data/doxis-state"),
             Map.entry("tenantIsolation", "false")
+        )));
+        defaults.add(new ConnectorDTO("Grpc_Push_Connector", "gRPC Push Streaming Ingestion", "repository", "org.opencrawling.push.grpc.GrpcPushRepositoryConnector", 100, Map.of(
+            "port", "9096",
+            "maxMessageSizeMb", "64",
+            "inlineBinaryThresholdKb", "512",
+            "token", "",
+            "tlsEnabled", "false",
+            "clientAuth", "NONE"
         )));
         defaults.add(new ConnectorDTO("PGVector_Output", "PGVector Store", "output", "org.opencrawling.vector.VectorOutputConnector", 10, Map.of(
             "pgVectorUrl", "jdbc:postgresql://127.0.0.1:5432/opencrawling",
@@ -295,10 +303,24 @@ public class ConnectorController {
         System.out.println("Checking connection for connector: " + connector.name() + " (" + connector.className() + ")");
         ConnectorDTO target = connector;
         if (target.className() == null && target.name() != null) {
-            target = storage.stream()
+            ConnectorDTO stored = storage.stream()
                     .filter(c -> c.name().equalsIgnoreCase(connector.name()))
                     .findFirst()
-                    .orElse(connector);
+                    .orElse(null);
+            if (stored != null) {
+                Map<String, String> mergedConfig = new HashMap<>(stored.configuration() != null ? stored.configuration() : Map.of());
+                if (connector.configuration() != null) {
+                    mergedConfig.putAll(connector.configuration());
+                }
+                target = new ConnectorDTO(
+                        stored.name(),
+                        connector.description() != null ? connector.description() : stored.description(),
+                        connector.type() != null ? connector.type() : stored.type(),
+                        stored.className(),
+                        connector.maxConnections() != null ? connector.maxConnections() : stored.maxConnections(),
+                        mergedConfig
+                );
+            }
         }
         ConnectionCheckResult result = checkerService.check(target);
         return ResponseEntity.ok(result);

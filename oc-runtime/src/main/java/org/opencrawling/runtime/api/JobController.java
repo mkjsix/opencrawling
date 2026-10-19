@@ -372,7 +372,9 @@ public class JobController {
                             jdbcConn.setNarrativizationTemplate(narrativizationTemplate);
                         }
                         resolvedConnector = jdbcConn;
-                        log.info("Successfully resolved dynamic JDBC repository connector for URL '{}' (target table: '{}')", url, tableName);
+                    } else if (connConfig.className().contains("GrpcPush") || connConfig.className().contains("grpcPush")) {
+                        resolvedConnector = new org.opencrawling.push.grpc.GrpcPushRepositoryConnector();
+                        log.info("Successfully resolved dynamic gRPC Push repository connector for '{}'", connConfig.name());
                     } else {
                         resolvedConnector = fileSystemRepositoryConnector;
                     }
@@ -566,7 +568,7 @@ public class JobController {
      * Resolves the effective pipeline mode for a job: the per-job override wins, otherwise the
      * global {@code opencrawling.pipeline.mode} default applies.
      */
-    PipelineMode resolvePipelineMode(JobDTO job) {
+    public PipelineMode resolvePipelineMode(JobDTO job) {
         return resolvePipelineMode(job != null ? job.id() : null, job != null ? job.pipelineMode() : null, pipelineProperties);
     }
 
@@ -616,7 +618,8 @@ public class JobController {
                     docCount,
                     lastRun,
                     job.transformationConnector(),
-                    job.narrativization()
+                    job.narrativization(),
+                    job.pipelineMode()
                 ));
                 break;
             }
@@ -640,12 +643,40 @@ public class JobController {
                     docCount,
                     LocalDateTime.now().format(formatter),
                     job.transformationConnector(),
-                    job.narrativization()
+                    job.narrativization(),
+                    job.pipelineMode()
                 ));
                 break;
             }
         }
         PersistenceHelper.save("jobs.json", jobs);
+    }
+
+    public void recordPushExecution(String id, long pushedDocs, boolean success) {
+        if (id == null || id.isBlank()) return;
+        for (int i = 0; i < jobs.size(); i++) {
+            JobDTO job = jobs.get(i);
+            if (job.id().equals(id)) {
+                long updatedDocs = Math.max(0L, job.documents()) + Math.max(0L, pushedDocs);
+                jobs.set(i, new JobDTO(
+                    job.id(),
+                    job.name(),
+                    job.repositoryConnector(),
+                    job.outputConnector(),
+                    job.authorityConnector(),
+                    job.path(),
+                    success ? "Finished" : "Error",
+                    success ? "Completed" : "Failed",
+                    updatedDocs,
+                    LocalDateTime.now().format(formatter),
+                    job.transformationConnector(),
+                    job.narrativization(),
+                    job.pipelineMode()
+                ));
+                PersistenceHelper.save("jobs.json", jobs);
+                break;
+            }
+        }
     }
 
     private long resolveExecutionDocCount(String executionId, long previousCount) {

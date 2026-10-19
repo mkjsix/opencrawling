@@ -97,6 +97,12 @@ public class ConnectorCommand implements Runnable {
         @Option(names = {"--type"}, description = "Connector type: repository, output, transformation", defaultValue = "output")
         private String type;
 
+        @Option(names = {"--class-name"}, description = "Optional connector Java class name override (e.g. org.opencrawling.push.grpc.GrpcPushRepositoryConnector)")
+        private String className;
+
+        @Option(names = {"--config"}, description = "Optional connector configuration key=value override (repeatable)")
+        private List<String> configEntries;
+
         @Option(names = {"--url"}, description = "Override OpenCrawling server URL")
         private String serverUrl;
 
@@ -106,9 +112,22 @@ public class ConnectorCommand implements Runnable {
         @Override
         public Integer call() {
             try (OpenCrawlingClient client = CliConfigService.createClient(serverUrl, apiKey)) {
+                java.util.Map<String, String> configMap = null;
+                if (configEntries != null && !configEntries.isEmpty()) {
+                    configMap = new java.util.LinkedHashMap<>();
+                    for (String kv : configEntries) {
+                        int eq = kv.indexOf('=');
+                        if (eq > 0) {
+                            configMap.put(kv.substring(0, eq).trim(), kv.substring(eq + 1).trim());
+                        }
+                    }
+                }
+
                 ConnectorRequest req = ConnectorRequest.builder()
                         .name(name)
                         .type(type)
+                        .className(className)
+                        .configuration(configMap)
                         .build();
 
                 ConnectionCheckResponse check = client.connectors().checkConnection(req);

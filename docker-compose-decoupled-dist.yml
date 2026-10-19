@@ -272,6 +272,7 @@ services:
     ports:
       - "8080:8080"
       - "9095:9095"
+      - "9096:9096"
     environment:
       - SPRING_AI_VECTORSTORE_PGVECTOR_URL=jdbc:postgresql://postgres:5432/opencrawling
       - SPRING_AI_VECTORSTORE_PGVECTOR_USERNAME=opencrawling
@@ -284,6 +285,9 @@ services:
       - OPENCRAWLING_OBSERVABILITY_SAMPLING_PROBABILITY=1.0
       - SPRING_OPENCRAWLING_CLAIM_CHECK_LOCAL_DIR=/claims
       - OPENCRAWLING_INGEST_OIS_TOKEN=${OPENCRAWLING_INGEST_OIS_TOKEN:-}
+      - OPENCRAWLING_GRPC_PUSH_ENABLED=${OPENCRAWLING_GRPC_PUSH_ENABLED:-true}
+      - OPENCRAWLING_GRPC_PUSH_PORT=${OPENCRAWLING_GRPC_PUSH_PORT:-9096}
+      - OPENCRAWLING_GRPC_PUSH_TOKEN=${OPENCRAWLING_GRPC_PUSH_TOKEN:-}
       - SPRING_OPENCRAWLING_REPORTING_LOCAL_DIR=/data/reports
     volumes:
       - opencrawling-claims:/claims  # Local claim check files, shared with oc-ingestion-consumer

@@ -187,5 +187,115 @@ class OpenCrawlingCliTest {
             System.setErr(originalErr);
         }
     }
+
+    @Test
+    void testPushCommandHelp() {
+        CommandLine cmd = new CommandLine(new OpenCrawlingCliCommand());
+        int exitCode = cmd.execute("push", "--help");
+        assertEquals(0, exitCode);
+        String out = outContent.toString();
+        assertTrue(out.contains("gRPC Push Repository Connector"));
+        assertTrue(out.contains("ping"));
+        assertTrue(out.contains("upsert"));
+        assertTrue(out.contains("delete"));
+        assertTrue(out.contains("stream"));
+    }
+
+    @Test
+    void testPushCommandsAgainstEmbeddedGrpcServer() throws Exception {
+        org.opencrawling.push.grpc.GrpcPushProperties props = new org.opencrawling.push.grpc.GrpcPushProperties();
+        props.setEnabled(true);
+        props.setPort(0);
+        props.setToken("cli-push-secret");
+
+        org.opencrawling.push.grpc.PushDocumentDispatcher dispatcher = request ->
+                org.opencrawling.push.v1.PushDocumentResponse.newBuilder()
+                        .setDocumentId(request.getDocument().getId())
+                        .setStatus(org.opencrawling.push.v1.IngestionStatus.ACCEPTED)
+                        .setMessage("Queued by test dispatcher")
+                        .setProcessedAt(System.currentTimeMillis())
+                        .build();
+
+        org.opencrawling.push.grpc.GrpcPushServerManager serverManager =
+                new org.opencrawling.push.grpc.GrpcPushServerManager(
+                        props,
+                        new org.opencrawling.push.grpc.OisPushServiceImpl(dispatcher),
+                        new org.opencrawling.push.grpc.GrpcSecurityInterceptor(props),
+                        new org.opencrawling.push.grpc.OpenTelemetryServerInterceptor());
+        serverManager.start();
+        try {
+            String portStr = String.valueOf(serverManager.getPort());
+
+            // 1. oc push ping
+            outContent.reset();
+            assertEquals(0, new CommandLine(new OpenCrawlingCliCommand())
+                    .execute("push", "ping", "--host", "127.0.0.1", "--port", portStr, "--format", "json"));
+            assertTrue(outContent.toString().contains("\"status\":\"UP\""));
+
+            // 2. oc push upsert without token -> rejected (exit code 1)
+            outContent.reset();
+            assertEquals(1, new CommandLine(new OpenCrawlingCliCommand())
+                    .execute("push", "upsert", "--host", "127.0.0.1", "--port", portStr,
+                            "--id", "doc://unauth", "--text", "unauthenticated", "--format", "json"));
+            assertTrue(outContent.toString().contains("\"grpcStatus\":\"UNAUTHENTICATED\""));
+
+            // 3. oc push upsert with valid token and inline text
+            outContent.reset();
+            assertEquals(0, new CommandLine(new OpenCrawlingCliCommand())
+                    .execute("push", "upsert", "--host", "127.0.0.1", "--port", portStr,
+                            "--token", "cli-push-secret",
+                            "--job-id", "1",
+                            "--id", "doc://cli-test-1",
+                            "--text", "OpenCrawling CLI gRPC Push test content",
+                            "--acl-allow", "ROLE_USER,GROUP_ENG",
+                            "--metadata", "title=CLI Test",
+                            "--format", "json"));
+            assertTrue(outContent.toString().contains("\"accepted\":true"));
+
+            // 4. oc push upsert with --file
+            java.io.File tempDoc = java.io.File.createTempFile("oc-cli-push-doc", ".txt");
+            tempDoc.deleteOnExit();
+            java.nio.file.Files.writeString(tempDoc.toPath(), "File payload via oc push upsert");
+            outContent.reset();
+            assertEquals(0, new CommandLine(new OpenCrawlingCliCommand())
+                    .execute("push", "upsert", "--host", "127.0.0.1", "--port", portStr,
+                            "--token", "cli-push-secret",
+                            "--id", "doc://cli-file-1",
+                            "--file", tempDoc.getAbsolutePath()));
+            assertTrue(outContent.toString().contains("Document accepted"));
+
+            // 5. oc push delete tombstone
+            outContent.reset();
+            assertEquals(0, new CommandLine(new OpenCrawlingCliCommand())
+                    .execute("push", "delete", "--host", "127.0.0.1", "--port", portStr,
+                            "--token", "cli-push-secret",
+                            "--job-id", "1",
+                            "--id", "doc://cli-test-1",
+                            "--format", "json"));
+            assertTrue(outContent.toString().contains("\"accepted\":true"));
+
+            // 6. oc push stream (client streaming)
+            outContent.reset();
+            assertEquals(0, new CommandLine(new OpenCrawlingCliCommand())
+                    .execute("push", "stream", "--host", "127.0.0.1", "--port", portStr,
+                            "--token", "cli-push-secret",
+                            "--doc-ids", "doc://s1,doc://s2",
+                            "--text", "Streamed via oc-cli",
+                            "--format", "json"));
+            assertTrue(outContent.toString().contains("\"totalAccepted\":2"));
+
+            // 7. oc push stream --bidi (bidirectional streaming)
+            outContent.reset();
+            assertEquals(0, new CommandLine(new OpenCrawlingCliCommand())
+                    .execute("push", "stream", "--bidi", "--host", "127.0.0.1", "--port", portStr,
+                            "--token", "cli-push-secret",
+                            "--doc-ids", "doc://b1,doc://b2",
+                            "--text", "Bidi streamed via oc-cli",
+                            "--format", "json"));
+            assertTrue(outContent.toString().contains("\"accepted\":true"));
+        } finally {
+            serverManager.stop();
+        }
+    }
 }
 

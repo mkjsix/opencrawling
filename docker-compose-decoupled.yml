@@ -323,6 +323,7 @@ services:
     ports:
       - "8080:8080"
       - "9095:9095"
+      - "9096:9096"
     environment:
       - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/opencrawling
       - SPRING_DATASOURCE_USERNAME=opencrawling
@@ -347,6 +348,9 @@ services:
       - SPRING_OPENCRAWLING_CLAIM_CHECK_LOCAL_DIR=/claims
       - SPRING_OPENCRAWLING_REPORTING_LOCAL_DIR=/data/reports
       - OPENCRAWLING_INGEST_OIS_TOKEN=${OPENCRAWLING_INGEST_OIS_TOKEN:-}
+      - OPENCRAWLING_GRPC_PUSH_ENABLED=${OPENCRAWLING_GRPC_PUSH_ENABLED:-true}
+      - OPENCRAWLING_GRPC_PUSH_PORT=${OPENCRAWLING_GRPC_PUSH_PORT:-9096}
+      - OPENCRAWLING_GRPC_PUSH_TOKEN=${OPENCRAWLING_GRPC_PUSH_TOKEN:-}
     volumes:
       - opencrawling-claims:/claims  # Local claim check files, shared with oc-ingestion-consumer
       - opencrawling-reportsdata:/data/reports

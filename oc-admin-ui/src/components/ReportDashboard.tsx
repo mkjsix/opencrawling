@@ -131,7 +131,7 @@ export default function ReportDashboard() {
 
   const handleCopyDuckDbSql = (report: JobReportSummary) => {
     const parquetPath = report.reportPathParquet || `mode=${report.pipelineMode}/**/job_${report.jobId}_exec_${report.executionId}.parquet`
-    const sql = `SELECT * FROM read_parquet('${parquetPath}') LIMIT 100;`
+    const sql = `SELECT * FROM read_parquet('${parquetPath}') LIMIT 100`
     navigator.clipboard.writeText(sql)
     setCopiedSql(true)
     setTimeout(() => setCopiedSql(false), 2500)
@@ -139,7 +139,7 @@ export default function ReportDashboard() {
 
   const handleOpenSqlPlayground = (report: JobReportSummary) => {
     const path = report.reportPathParquet || `mode=${report.pipelineMode}/**/job_${report.jobId}_*.parquet`
-    setSqlQuery(`SELECT status, count(*) AS doc_count, avg(duration_ms) AS avg_duration_ms FROM read_parquet('${path}') GROUP BY status;`)
+    setSqlQuery(`SELECT status, count(*) AS doc_count, avg(duration_ms) AS avg_duration_ms FROM read_parquet('${path}') GROUP BY status`)
     setQueryResult(null)
     setQueryError(null)
     setIsSqlModalOpen(true)
@@ -826,7 +826,7 @@ export default function ReportDashboard() {
                 onChange={e => setSqlQuery(e.target.value)}
                 rows={4}
                 className="w-full p-3 text-xs font-mono bg-background border border-border rounded-lg focus:outline-none focus:ring-1 focus:ring-primary text-foreground"
-                placeholder="SELECT * FROM read_parquet('...') LIMIT 50;"
+                placeholder="SELECT * FROM read_parquet('...') LIMIT 50"
               />
 
               <div className="flex items-center justify-between">

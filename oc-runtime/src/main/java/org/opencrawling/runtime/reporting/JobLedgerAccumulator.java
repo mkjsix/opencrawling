@@ -66,6 +66,16 @@ public class JobLedgerAccumulator {
         log.info("Initialized JobLedgerAccumulator for job '{}' [Exec ID: {}, Mode: {}]", context.jobName, executionId, context.pipelineMode);
     }
 
+    public boolean hasActiveExecution(String executionId) {
+        return executionId != null && activeExecutions.containsKey(executionId);
+    }
+
+    public void cancelExecution(String executionId) {
+        if (executionId != null) {
+            activeExecutions.remove(executionId);
+        }
+    }
+
     public void recordDocument(DocumentLedgerEntry entry) {
         if (entry == null || entry.executionId() == null) return;
         ExecutionContext context = activeExecutions.get(entry.executionId());
@@ -98,10 +108,16 @@ public class JobLedgerAccumulator {
             long totalTokens = entries.stream().mapToInt(e -> e.ragTokenCount() != null ? e.ragTokenCount() : 0).sum();
             // Pricing heuristic: approx $0.0001 per 1K tokens for local/cloud standard models
             double estimatedCost = (totalTokens / 1000.0) * 0.0001;
+            String model = entries.stream()
+                    .map(DocumentLedgerEntry::ragEmbeddingModel)
+                    .filter(m -> m != null && !m.isBlank())
+                    .findFirst()
+                    .orElse("mxbai-embed-large");
 
             summaryMetrics.putIfAbsent("totalChunks", totalChunks);
             summaryMetrics.putIfAbsent("totalTokens", totalTokens);
             summaryMetrics.putIfAbsent("estimatedEmbeddingCostUsd", estimatedCost);
+            summaryMetrics.putIfAbsent("embeddingModel", model);
         } else if (context.pipelineMode == PipelineMode.MIGRATION) {
             long totalBytes = entries.stream().mapToLong(e -> e.migBinarySizeBytes() != null ? e.migBinarySizeBytes() : 0L).sum();
             long reclaimedBytes = entries.stream().mapToLong(e -> e.migReclaimedBytes() != null ? e.migReclaimedBytes() : 0L).sum();
@@ -141,6 +157,10 @@ public class JobLedgerAccumulator {
 
     public JobExecutionCompletedEvent getCompletedEvent(String executionId) {
         return completedExecutions.get(executionId);
+    }
+
+    public Collection<JobExecutionCompletedEvent> getAllCompletedEvents() {
+        return Collections.unmodifiableCollection(completedExecutions.values());
     }
 
     public List<DocumentLedgerEntry> getEntries(String executionId) {

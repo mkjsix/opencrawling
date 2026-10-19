@@ -26,7 +26,7 @@ BOLD='\033[1m'
 NC='\033[0m' # No Color
 
 PASSED_COUNT=0
-TOTAL_TESTS=11
+TOTAL_TESTS=13
 
 log_step() {
     echo -e "\n${BOLD}${CYAN}────────────────────────────────────────────────────────────────────────────────${NC}"
@@ -166,6 +166,14 @@ log_pass "oc connector list retrieved repository connectors"
 echo -e "\n${CYAN}  [4.5] Probing output connector health ('oc connector check')...${NC}"
 $RUN_CLI connector check --name PGVector_Output --type output
 log_pass "oc connector check verified PGVector_Output health"
+
+echo -e "\n${CYAN}  [4.5b] Probing gRPC Push repository connector health ('oc connector check --name Grpc_Push_Connector')...${NC}"
+$RUN_CLI connector check --name Grpc_Push_Connector --type repository
+log_pass "oc connector check verified Grpc_Push_Connector health"
+
+echo -e "\n${CYAN}  [4.5c] Probing gRPC Push listener directly via CLI ('oc push ping')...${NC}"
+$RUN_CLI push ping --host 127.0.0.1 --port 9096
+log_pass "oc push ping verified live gRPC Push listener on port 9096"
 
 # 4.4 Job Orchestration & AIOps Traces
 echo -e "\n${CYAN}  [4.6] Listing active ingestion jobs ('oc job list')...${NC}"

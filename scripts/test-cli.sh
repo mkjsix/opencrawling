@@ -109,9 +109,13 @@ fi
 
 # Step 6: Testing Subcommand Help Displays
 echo -e "${CYAN}[INFO] Step 6: Verifying all subcommand help menus...${NC}"
-for cmd in job connector copilot aiops system config schema mcf; do
+for cmd in job connector push copilot aiops system config schema mcf report; do
     $RUN_CLI $cmd --help > /dev/null
     echo -e "${GREEN}  ✔ oc $cmd --help passed.${NC}"
+done
+for push_sub in ping upsert delete stream; do
+    $RUN_CLI push $push_sub --help > /dev/null
+    echo -e "${GREEN}  ✔ oc push $push_sub --help passed.${NC}"
 done
 
 # Step 7: Testing ManifoldCF Migrator CLI (oc mcf)
@@ -176,6 +180,7 @@ if [ "$HTTP_CODE" = "200" ]; then
     $RUN_CLI system status
     $RUN_CLI connector list
     $RUN_CLI job list
+    $RUN_CLI push ping --host 127.0.0.1 --port "${OPENCRAWLING_GRPC_PUSH_PORT:-9096}" || true
     echo -e "${GREEN}  ✔ Live REST API CLI integration tests passed.${NC}"
 else
     echo -e "${YELLOW}[WARN] OpenCrawling Runtime is not running on http://localhost:8080. (Skipping live API call step)${NC}"
