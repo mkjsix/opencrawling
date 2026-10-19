@@ -454,13 +454,15 @@ public class JobOrchestrator {
         if (doc.action() != DocumentAction.DELETE) {
             // A fresh name per message: IngestionConsumer deletes the claim it consumed, which must not be
             // the claim of a newer message for the same document.
-            try (InputStream in = doc.contentStream()) {
-                uri = claimCheckStore.put(UUID.randomUUID() + ".txt", in, -1, "text/plain").toString();
+            if (doc.contentStream() != null) {
+                try (InputStream in = doc.contentStream()) {
+                    uri = claimCheckStore.put(UUID.randomUUID() + ".txt", in, -1, "text/plain").toString();
+                }
+                // The text extractor picks its parser from these keys; they must describe the stored text.
+                metadata = new java.util.HashMap<>(metadata);
+                metadata.keySet().removeAll(List.of("mimetype", "Content-Type", "content-type"));
+                metadata.put("mimeType", List.of("text/plain"));
             }
-            // The text extractor picks its parser from these keys; they must describe the stored text.
-            metadata = new java.util.HashMap<>(metadata);
-            metadata.keySet().removeAll(List.of("mimetype", "Content-Type", "content-type"));
-            metadata.put("mimeType", List.of("text/plain"));
         }
         Transformation transformation = resolveTransformation(transformationConnector);
         IngestionMessage message = new IngestionMessage(doc.id(), uri, metadata, doc.acl(), doc.security(),

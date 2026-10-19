@@ -1,5 +1,5 @@
 /*
- * Copyright © 2026 the original author or authors (piergiorgio@apache.org)
+ * Copyright © ${year} the original author or authors (piergiorgio@apache.org)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -93,6 +93,11 @@ public class ConnectorCheckerService {
             // --- Camunda Repository Connector ---
             if (className.contains("CamundaRepositoryConnector") || className.contains("Camunda")) {
                 return checkCamunda(config);
+            }
+
+            // --- gRPC Push Repository Connector ---
+            if (className.contains("GrpcPush") || className.contains("grpc-push") || className.contains("grpcPush")) {
+                return checkGrpcPush(config);
             }
 
             // --- StormCrawler Repository Connector ---
@@ -694,6 +699,49 @@ public class ConnectorCheckerService {
             }
         } catch (Exception e) {
             return new ConnectionCheckResult(false, "Failed to connect to JDBC database at " + url + ": " + e.getMessage(), e.toString());
+        }
+    }
+
+    private ConnectionCheckResult checkGrpcPush(Map<String, String> config) {
+        String host = config.getOrDefault("host", "localhost");
+        int port = 9096;
+        try {
+            port = Integer.parseInt(config.getOrDefault("port", config.getOrDefault("listenerPort", "9096")));
+        } catch (NumberFormatException ignored) {}
+
+        io.grpc.ManagedChannel channel = null;
+        try {
+            channel = io.grpc.ManagedChannelBuilder.forAddress(host, port)
+                    .usePlaintext()
+                    .build();
+
+            org.opencrawling.push.v1.OisPushServiceGrpc.OisPushServiceBlockingStub stub =
+                    org.opencrawling.push.v1.OisPushServiceGrpc.newBlockingStub(channel)
+                            .withDeadlineAfter(3, java.util.concurrent.TimeUnit.SECONDS);
+
+            org.opencrawling.push.v1.PingResponse response = stub.ping(
+                    org.opencrawling.push.v1.PingRequest.newBuilder()
+                            .setClientId("admin-ui-diagnostic-check")
+                            .build()
+            );
+
+            return new ConnectionCheckResult(
+                    true,
+                    "gRPC Push listener ready at " + host + ":" + port + " (Status: " + response.getStatus() + ", Version: " + response.getVersion() + ")",
+                    "Server epoch time: " + response.getServerTime()
+            );
+        } catch (Exception e) {
+            return new ConnectionCheckResult(
+                    false,
+                    "Failed to connect to gRPC Push listener at " + host + ":" + port + ": " + e.getMessage(),
+                    e.toString()
+            );
+        } finally {
+            if (channel != null) {
+                try {
+                    channel.shutdownNow().awaitTermination(2, java.util.concurrent.TimeUnit.SECONDS);
+                } catch (Exception ignored) {}
+            }
         }
     }
 

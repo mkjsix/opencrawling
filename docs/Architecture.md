@@ -33,7 +33,7 @@ Provides binary Protobuf payload streaming over HTTP/2 (default port `9095`) for
 A modular translation engine that bridges Apache ManifoldCF crawler configurations (repository, output, transformation connections, and jobs) into OpenCrawling. Reusable as a standalone CLI JAR, embedded within `oc-cli` under `oc mcf`, and powering the `/api/mcf-migration/*` REST endpoints and the `oc-admin-ui` migration wizard.
 
 ### 8. Pluggable Connector Ecosystem (`oc-*-repository-connector`)
-Enterprise boundary adapters that stream structured and unstructured data from heterogeneous sources (Relational databases via JDBC, Alfresco, CMIS, Camunda, Flowable, FileSystem, Iceberg, StormCrawler). Employs Java 25 Virtual Threads, Structured Concurrency, schema introspection, zero-trust security ACL mapping, and dual-path ingestion.
+Enterprise boundary adapters that stream structured and unstructured data from heterogeneous sources (Relational databases via JDBC, Alfresco, CMIS, Camunda, Flowable, FileSystem, Iceberg, StormCrawler, and high-performance streaming gRPC Push). Employs Java 25 Virtual Threads, Structured Concurrency, schema introspection, zero-trust security ACL mapping, and dual-path ingestion. See [gRPC Push Connector](gRPC-Push-Connector).
 
 ---
 

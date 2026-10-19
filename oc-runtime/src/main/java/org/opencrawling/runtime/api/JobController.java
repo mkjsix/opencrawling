@@ -372,7 +372,9 @@ public class JobController {
                             jdbcConn.setNarrativizationTemplate(narrativizationTemplate);
                         }
                         resolvedConnector = jdbcConn;
-                        log.info("Successfully resolved dynamic JDBC repository connector for URL '{}' (target table: '{}')", url, tableName);
+                    } else if (connConfig.className().contains("GrpcPush") || connConfig.className().contains("grpcPush")) {
+                        resolvedConnector = new org.opencrawling.push.grpc.GrpcPushRepositoryConnector();
+                        log.info("Successfully resolved dynamic gRPC Push repository connector for '{}'", connConfig.name());
                     } else {
                         resolvedConnector = fileSystemRepositoryConnector;
                     }
@@ -566,7 +568,7 @@ public class JobController {
      * Resolves the effective pipeline mode for a job: the per-job override wins, otherwise the
      * global {@code opencrawling.pipeline.mode} default applies.
      */
-    PipelineMode resolvePipelineMode(JobDTO job) {
+    public PipelineMode resolvePipelineMode(JobDTO job) {
         return resolvePipelineMode(job != null ? job.id() : null, job != null ? job.pipelineMode() : null, pipelineProperties);
     }
 

@@ -1,5 +1,5 @@
 /*
- * Copyright © 2026 the original author or authors (piergiorgio@apache.org)
+ * Copyright © ${year} the original author or authors (piergiorgio@apache.org)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -135,6 +135,14 @@ public class ConnectorController {
             Map.entry("incremental", "false"),
             Map.entry("stateDirectory", "data/doxis-state"),
             Map.entry("tenantIsolation", "false")
+        )));
+        defaults.add(new ConnectorDTO("Grpc_Push_Connector", "gRPC Push Streaming Ingestion", "repository", "org.opencrawling.push.grpc.GrpcPushRepositoryConnector", 100, Map.of(
+            "port", "9096",
+            "maxMessageSizeMb", "64",
+            "inlineBinaryThresholdKb", "512",
+            "token", "",
+            "tlsEnabled", "false",
+            "clientAuth", "NONE"
         )));
         defaults.add(new ConnectorDTO("PGVector_Output", "PGVector Store", "output", "org.opencrawling.vector.VectorOutputConnector", 10, Map.of(
             "pgVectorUrl", "jdbc:postgresql://127.0.0.1:5432/opencrawling",
