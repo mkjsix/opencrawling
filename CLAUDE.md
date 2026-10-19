@@ -4,112 +4,182 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-OpenCrawling is a Java 25 / Spring Boot 4 enterprise data ingestion and vector search platform. It crawls document repositories, extracts text via Apache Tika, chunks it via Spring AI's `TokenTextSplitter`, generates embeddings (Ollama or OpenAI), and stores vectors in PostgreSQL + pgvector. An MCP server exposes the vector store to AI clients with server-side ACL enforcement.
+OpenCrawling is a Java 25 / Spring Boot 4 data-ingestion and vector-search platform. Repository connectors crawl sources. Apache Tika extracts the text, Spring AI's `TokenTextSplitter` chunks it, Ollama or OpenAI generate embeddings, and a pluggable output connector stores the vectors (pgvector by default). Stages talk over Kafka. An MCP server exposes the stored vectors to AI clients and enforces ACLs server-side.
 
-## Build Commands
+Longer-form docs live in `docs/`: `Architecture.md` (pipeline, tracing, the connector blueprint), `Configuration-Guide.md`, `Model-Context-Protocol.md` and `Migration-Guide.md`.
+
+## Build and Test
 
 ```bash
-# Full build (all Maven modules)
-mvn clean install
+mvn clean install                            # all modules + unit tests (also builds oc-admin-ui); ~8 min
+mvn clean install -DskipTests                # fast build
+mvn clean verify -DfailIfNoTests=false       # what CI runs (unit tests only)
 
-# Run the ingestion runtime (dev profile, connects to local Docker infra)
-mvn spring-boot:run -pl oc-runtime -Dspring-boot.run.profiles=dev
+mvn test -pl oc-runtime -Dtest=McpVectorServerTest                    # single unit test
+mvn verify -pl oc-runtime -DskipITs=false                             # JUnit ITs (Failsafe, *IT classes)
+mvn verify -pl oc-runtime -DskipITs=false -Dit.test=OpenCrawlingIT    # single IT
 
-# Run the embedding microservice (separate process)
-mvn spring-boot:run -pl oc-embedding-service
+mvn spring-boot:run -pl oc-runtime -Dspring-boot.run.profiles=dev   # runtime on :8080
+mvn spring-boot:run -pl oc-embedding-service                        # embedding service on :8085
 
-# Run unit tests only
-mvn test
+mvn license:format                           # add Apache 2.0 headers to new files
 
-# Run integration tests (requires Docker infrastructure running)
-mvn verify -pl oc-runtime
-
-# Run a single test class
-mvn test -pl oc-runtime -Dtest=McpVectorServerTest
-
-# Run a single integration test
-mvn verify -pl oc-runtime -Dit.test=OpenCrawlingIT
-
-# Admin UI
-cd oc-admin-ui && npm install && npm run dev   # dev server at http://localhost:5173
-cd oc-admin-ui && npm run build                # production build
-cd oc-admin-ui && npm run lint                 # ESLint
+cd oc-admin-ui && npm install && npm run dev  # Vite dev server on :5173
+cd oc-admin-ui && npm run build               # tsc && vite build (CI runs this)
+cd oc-admin-ui && npm run lint                # ESLint
 ```
 
-**Preview features are required.** `--enable-preview` is pre-configured in `pom.xml` for the compiler, Surefire, and Failsafe. The Spring Boot Maven plugin also passes `--enable-preview` at runtime. If your IDE fails to compile, enable preview features manually.
+- The root `pom.xml` sets `<skipITs>true</skipITs>`, so the JUnit ITs never run unless you pass `-DskipITs=false`.
+- `-pl` runs resolve sibling modules from the local repository, so run `mvn install` once first.
+- Preview features are required. `--enable-preview` (plus `--enable-native-access=ALL-UNNAMED` for the tests) is set in the root `pom.xml` for the compiler, Surefire, Failsafe and the Spring Boot plugin. Your IDE needs preview features enabled too.
+
+### Integration test scripts
+
+End-to-end tests are bash scripts in `scripts/`. They bring up Docker Compose stacks and drive the REST API and MCP endpoints. Each connector or output usually has two:
+- `test-<name>-connector.sh` tests the connector on its own.
+- `test-<name>-decoupled.sh` tests the full pipeline from source to Kafka, embedding, store and MCP.
+
+Build first (`mvn clean install -DskipTests`).
+
+```bash
+./run-integration-tests.sh --list               # discover scripts
+./run-integration-tests.sh qdrant               # run scripts whose filenames match a keyword
+./run-integration-tests.sh scripts/test-cli.sh  # run one script
+./run-integration-tests.sh -v --fail-fast       # stream output, stop at first failure
+```
+
+Logs go to `logs/integration-tests/`. CI runs these scripts as a matrix (`.github/workflows/integration-tests.yml`).
+
+### JUnit ITs in `oc-runtime`
+
+- **Docker:** the ITs need the infrastructure from `docker compose up -d`. The `docker-maven-plugin` in `oc-runtime/pom.xml` has `<skip>true</skip>`, so Maven won't start it for you.
+- **Configuration:** the ITs use `@ActiveProfiles("test")`, but there is no `application-test.yml`. Each IT sets its overrides through `@SpringBootTest` properties.
+- **Kafka groups:** `spring.kafka.consumer.group-id` is randomized per run (`test-group-${random.uuid}`) so runs don't collide on offsets.
+- **Similarity threshold:** `TestEmbeddingConsumer` emits `[1.0, 0, ...]` vectors, so the IT searches use `similarityThreshold(0.0)`.
+- **Unit tests** use Mockito with no Spring context.
 
 ## Infrastructure (Docker)
 
 ```bash
-# Start infrastructure only (PostgreSQL+pgvector, Redis, Ollama, Kafka KRaft)
-docker compose up -d
-
-# Build + start all application containers
-docker compose -f docker-compose-apps.yml up -d --build
-
-# Run the end-to-end decoupled integration test script
-./scripts/test-docker-decoupled.sh
+docker compose up -d                                          # PostgreSQL+pgvector, Redis, Ollama, Kafka (KRaft)
+docker compose -f docker-compose-apps.yml up -d --build       # monolithic app containers
+docker compose -f docker-compose-decoupled.yml up -d --build  # one container per pipeline stage
 ```
 
-Ports: PostgreSQL `5432`, Redis `6379` / Insight UI `8001`, Ollama `11434`, Kafka `9092`, Backend `8080`, Embedding Service `8082`, Frontend `3000`.
+- **Ports:** PostgreSQL `5432`, Redis `6379` (Insight UI `8001`), Ollama `11434`, Kafka `9092`, runtime `8080`, gRPC `9095`, embedding service `8082` (Docker; `8085` when run locally), admin UI `3000`.
+- **Per-stage images** are in `docker/` (`Dockerfile.crawler`, `.ingestion-consumer`, `.embedding-consumer`, `.writer-consumer`, `.mcp-server`, `.cli`).
+- **Per-connector stacks** are in `oc-<name>-*-connector/docker/docker-compose-decoupled-with-<name>.yml`.
 
 ## Architecture
 
-### Module Structure
+### Modules
 
-| Module | Role |
-|---|---|
-| `oc-core` | Shared interfaces (`Connector`, `RepositoryConnector`, `OutputConnector`, `TransformationConnector`), Kafka message records (`IngestionMessage`, `DocumentChunkMessage`, `DocumentEmbeddedMessage`), `RepositoryDocument`, `SecurityConfig` / `PermissionRule` |
-| `oc-runtime` | Spring Boot main app. REST API (`/api/jobs`, `/api/connectors`, `/api/system`), `JobOrchestrator`, `IngestionConsumer`, `VectorStoreWriterConsumer`, `McpVectorServer`. Depends on all other modules. |
-| `oc-filesystem-repository-connector` | `FileSystemRepositoryConnector` — implements `RepositoryConnector`, returns a `Flux<RepositoryDocument>` by walking a local path |
-| `oc-alfresco-repository-connector` | `AlfrescoRepositoryConnector` — uses Java `HttpClient` + Structured Concurrency to batch-fetch nodes from Alfresco REST API, streams content as Claim Check files |
-| `oc-vector-output-connector` | `VectorOutputConnector` + `VectorStoreConfig` — configures four named `PgVectorStore` beans (`vector_store`, `vector_store_384`, `vector_store_768`, `vector_store_1024`) using `PrecomputedEmbeddingModel` (a no-op model that accepts pre-computed vectors from Kafka) |
-| `oc-embedding-service` | Standalone Spring Boot app. `EmbeddingConsumer` reads chunks from Kafka, `EmbeddingModelFactory` dispatches to Ollama or OpenAI dynamically per-job, publishes embedded vectors back to Kafka |
-| `oc-admin-ui` | Vite + React 19 + TailwindCSS admin dashboard. Built by Maven's frontend plugin and bundled as a static resource inside `oc-runtime`'s JAR |
+- **`oc-core`**: the SPI and the shared models.
+  - The sealed `Connector` interface (`permits RepositoryConnector, TransformationConnector, OutputConnector`).
+  - `RepositoryDocument` and `DocumentAction` (`UPSERT` / `DELETE`), `ConnectorSchema`.
+  - The Kafka message records (`IngestionMessage`, `DocumentChunkMessage`, `DocumentEmbeddedMessage`).
+  - `SecurityConfig` / `PermissionRule`, and the claim-check store abstraction.
+- **`oc-runtime`**: the Spring Boot main app. It depends on every connector module and contains:
+  - the REST controllers (`api/`) and `JobOrchestrator`
+  - `IngestionConsumer` and `VectorStoreWriterConsumer` (pgvector)
+  - `McpVectorServer` and `VespaMcpVectorServer`
+  - reporting, AIOps and the gRPC transport
+- **`oc-embedding-service`**: a standalone app. `EmbeddingConsumer` reads chunks, and `EmbeddingModelFactory` picks Ollama or OpenAI per job. It caches clients by `engine-modelName`.
+- **`oc-*-repository-connector`**: the sources. Each one implements `scan(basePath) -> Flux<RepositoryDocument>` and, optionally, `getSchema()`.
+- **`oc-*-output-connector`**: the sinks. Each non-pgvector sink ships its own `messaging/*StoreWriterConsumer`.
+- **`oc-observability`**: OTel / Micrometer helpers.
+- **`oc-grpc-api`**: the Protobuf contracts for the optional transport (`opencrawling.transport.mode` = `AUTO` | `GRPC` | `REST`).
+- **Supporting modules:**
+  - `oc-cli` (the `oc` command)
+  - `oc-java-client-sdk`
+  - `oc-mcf-migrator` (ManifoldCF import)
+  - `oc-connector-archetypes` (Maven archetypes for new connectors)
+  - `oc-admin-ui` (React 19 + TypeScript + Tailwind; its `dist/` is copied into `META-INF/resources` and served by the runtime)
 
-### Kafka Pipeline (Claim Check Pattern)
+### Kafka pipeline (claim-check pattern)
 
 ```
 RepositoryConnector.scan()
-  -> JobOrchestrator publishes IngestionMessage (URI only, no content) -> [opencrawling-ingestion]
-    -> IngestionConsumer: reads file from URI, Tika extract, TokenTextSplitter chunk -> [opencrawling-chunks]
-      -> EmbeddingConsumer (oc-embedding-service): EmbeddingModelFactory -> [opencrawling-embedded]
-        -> VectorStoreWriterConsumer: PrecomputedEmbeddingModel -> PgVectorStore
+  -> JobOrchestrator: content to the claim-check store, IngestionMessage (URI only) -> [opencrawling-documents]
+    -> IngestionConsumer: Tika extract + TokenTextSplitter -> [opencrawling-chunks]
+      -> EmbeddingConsumer (oc-embedding-service)          -> [opencrawling-embedded]
+        -> <Output>StoreWriterConsumer -> vector store
 ```
 
-- For non-filesystem connectors (e.g., Alfresco), the connector saves content to a local `data/claims/` directory and sets the URI to that file path before publishing. The `IngestionConsumer` always reads from a local `file://` URI.
-- The `EmbeddingModelFactory` caches model clients by `"engine-modelName"` key in a `ConcurrentHashMap`, so per-job model configs are hot after the first request.
-- `VectorStoreWriterConsumer` uses `@ConditionalOnProperty` (`opencrawling.consumer.vector-writer.enabled`); `IngestionConsumer` uses `opencrawling.consumer.ingestion.enabled`. These allow deploying consumers as separate containers in the decoupled mode.
+The runtime's topic names are constants in `oc-runtime/.../config/KafkaConfig.java`. `oc-embedding-service` has its own `KafkaConfig` copy, so if you rename a topic, change both.
 
-### MCP Server
+- **Claim-check store:** `spring.opencrawling.claim-check.store` is `local` (default dir `target/claims`) or `ozone`.
+  - Claims are deleted on consume (`cleanup-on-consume`). `ClaimCheckGarbageCollector` sweeps orphans every hour by default.
+  - In decoupled deployments every stage must be able to reach the store: use a shared volume or Ozone.
+- **Tombstones:** `DocumentAction.DELETE` skips claim-check storage, Tika, chunking and embedding. The writer then purges that document's chunks.
+- **Pipeline mode:** `opencrawling.pipeline.mode` is `RAG` (default) or `MIGRATION`, and a job can override it.
+- **Stage toggles:** each of these defaults to `true`. Turning them off is how the decoupled containers split one codebase into separate stages.
+  - `opencrawling.consumer.ingestion.enabled`
+  - `opencrawling.consumer.embedding.enabled`
+  - `opencrawling.consumer.writer.enabled`
+  - `opencrawling.mcp.server.enabled`
+- **Output selection:** `spring.opencrawling.output.type` picks the active writer.
+  - Values: `pgvector` (default), `milvus`, `qdrant`, `vespa`, `solr`, `opensearch2`, `opensearch3`, `seatunnel`, `ozone`, `luxir`.
+  - Each writer consumer is gated on this property with `@ConditionalOnProperty` or `@ConditionalOnExpression`. New outputs must follow the same pattern.
+- **Push ingestion:** `OisIngestController` accepts documents without a crawler. It writes each UPSERT's text to the claim-check store.
 
-`McpVectorServer` (in `oc-runtime`) exposes three `@McpTool` methods over SSE at `http://localhost:8080`:
-- `secureVectorSearch` — similarity search with pgvector filter on `acl` field, then server-side re-check against the richer `SecurityConfig` JSON (OIS permissions model: `identity`, `identityType`, `access`)
-- `getDocumentContent` — fetch full document chunks by URI with ACL guard
-- `listAccessibleSources` — list all indexed URIs visible to a given principal/groups
+### Concurrency and tracing constraints
 
-### Security / ACL Model
+- **Virtual threads** are enabled globally (`spring.threads.virtual.enabled=true`). Jobs start on `Thread.ofVirtual()`.
+- **Fan-out** goes through `StructuredTaskScope` (a preview API).
+- **Trace context** isn't inherited by virtual threads forked in a `StructuredTaskScope`. Wrap every forked task in `ObservabilityTask.observed(...)` (from `oc-observability`) so the trace reaches the Kafka `traceparent` headers.
+- **Streaming:** connectors must keep heap use constant. Use cursor fetch sizes and `InputStream` content in `RepositoryDocument`. Never materialize whole result sets or files.
 
-`SecurityConfig` (from `oc-core`) is stored in each document's `metadata["security"]` field as a JSON map. It holds a list of `PermissionRule` objects with `identity`, `identityType`, `displayName`, and `access` (`"read"`, `"write"`, `"deny"`). Explicit `deny` rules take precedence. The flat `acl` string in metadata is a legacy/compatibility field used by pgvector filter expressions.
+### MCP server
 
-### Connector and Job Configuration
+`McpVectorServer` uses Spring AI MCP with the `STREAMABLE_HTTP` transport on the runtime port and exposes three `@McpTool` methods:
+- **`secureVectorSearch`** runs a similarity search filtered on the flat `acl` metadata field, then re-checks each hit against `SecurityConfig`.
+- **`getDocumentContent`** returns a document's chunks by URI, behind the same ACL guard.
+- **`listAccessibleSources`** lists the indexed URIs that a principal and its groups can see.
 
-Job and connector configurations are persisted as JSON files in `oc-runtime/data/` (`jobs.json`, `connectors.json`) using `PersistenceHelper`. The `settings.json` file controls embedding provider defaults (embedding model, chunk size, overlap). Job execution is launched in a virtual thread via `Thread.ofVirtual().start(...)`.
+When the output type is `vespa`, `VespaMcpVectorServer` replaces it.
 
-### Vector Store Routing
+### Security / ACL model
 
-The four `PgVectorStore` beans are named by dimension (384, 768, 1024). `McpVectorServer` and `VectorStoreWriterConsumer` select the correct store based on the `dimensions` field in `DocumentEmbeddedMessage`. The default store (`vector_store`) is `@Primary`. Model-to-dimension mapping: `mxbai-embed-large` -> 1024, `nomic-embed-text` -> 768, `all-minilm` -> 384.
+- **Where it lives:** `SecurityConfig` is stored as a JSON map in `metadata["security"]`.
+- **Rules:** it holds `PermissionRule` records with these fields:
+  - `identity`
+  - `identityType` (`USER`, `GROUP` or `TENANT`)
+  - `displayName`
+  - `access` (`read`, `write` or `deny`)
+- **Precedence:** an explicit `deny` always wins.
+- **Legacy field:** the flat `acl` string is what vector-store filter expressions use. Connectors must populate both it and `SecurityConfig`.
 
-## Key Java 25 Features in Use
+### pgvector routing
 
-- **Structured Concurrency** (`StructuredTaskScope.open()`) — used in `JobOrchestrator` and `AlfrescoRepositoryConnector`. Requires `--enable-preview --enable-native-access=ALL-UNNAMED` at runtime.
-- **Virtual Threads** — enabled globally via `spring.threads.virtual.enabled=true`; job starts use `Thread.ofVirtual()`.
-- **Sealed interfaces** — `Connector` is `sealed permits RepositoryConnector, TransformationConnector, OutputConnector`.
-- **Records** — used for all Kafka message types, DTOs, and `SecurityConfig`/`PermissionRule`.
+- **Beans:** `oc-vector-output-connector` defines four `PgVectorStore` beans:
+  - `vectorStore` (`@Primary`, table `vector_store`)
+  - `vectorStore384`, `vectorStore768` and `vectorStore1024` (tables `vector_store_384`, `_768` and `_1024`)
+- **Embedding model:** all four use `PrecomputedEmbeddingModel`, a no-op that accepts the vectors already computed upstream.
+- **Store selection:** `VectorStoreWriterConsumer` picks the store from the length of the incoming vector.
+- **Model dimensions:** the mapping from model name to dimension (`mxbai-embed-large` 1024, `nomic-embed-text` 768, `all-minilm` 384) lives in the admin UI (`Settings.tsx`), not the backend.
 
-## Testing Notes
+### Configuration and persistence
 
-- Unit tests (e.g., `McpVectorServerTest`) use Mockito; no Spring context needed.
-- The integration test `OpenCrawlingIT` (`@ActiveProfiles("test")`) requires running Docker infrastructure. The `docker-maven-plugin` in `oc-runtime/pom.xml` is currently set to `<skip>true</skip>` — start Docker manually with `docker compose up -d` before running `mvn verify`.
-- The IT uses a dummy `TestEmbeddingConsumer` and `similarityThreshold(0.0)` because the test embedding model emits `[1.0, 0, ...]` vectors, so cosine similarity against a real Ollama query vector is near zero.
-- The `spring.kafka.consumer.group-id` is randomized per test run (`test-group-${random.uuid}`) to avoid offset conflicts.
+- **Saved state:** job, connector, settings and transport configs are JSON files in `data/`, relative to the working directory. They are read and written through `PersistenceHelper` (`jobs.json`, `connectors.json`, `settings.json`, `transport-settings.json`).
+- **Datasource:** the default in `application.yml` is in-memory H2. Spring profiles: `dev` and `prod`.
+- **API docs:** the REST API is documented with OpenAPI 3.1 and served through Swagger UI (`OpenApiConfig`).
+
+### Adding a connector
+
+Follow the blueprint and quality checklist in `docs/Architecture.md`, or generate a skeleton with `oc-connector-archetypes`. Points that aren't obvious from a single file:
+
+- **Root `pom.xml`:** register the module in `<modules>` and `<dependencyManagement>`.
+- **`oc-runtime/pom.xml`:** add the module as a dependency.
+- **UI discovery:** `ConnectorController` lists connectors from two places. One is its hard-coded built-in defaults. The other is `ServiceLoader` discovery, which needs a `META-INF/services/org.opencrawling.core.connector.<Kind>Connector` file (the archetypes generate one).
+- **Job dispatch:** `JobController` picks the connector by matching substrings of the configured `className` (for example `contains("Jdbc")`). A repository connector that needs custom wiring needs a branch there.
+- **Health check:** add a probe in `ConnectorCheckerService`.
+- **Admin UI:** add the connector's form to `oc-admin-ui/src/components/ConnectorForm.tsx`.
+- **Docker:** add the JAR to `docker/Dockerfile.crawler` and `docker/Dockerfile.ingestion-consumer`, and give the module its own `docker/docker-compose-decoupled-with-<name>.yml`.
+- **Tests:** add `scripts/test-<name>-connector.sh` and `scripts/test-<name>-decoupled.sh`.
+
+## Conventions
+
+- **Commits:** follow Conventional Commits (`feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `chore:`), usually with a scope and issue number, e.g. `fix(tika): ... (#147)`. PRs target `main` and reference their issue.
+- **Code style:** Java follows Google Java Style. Admin UI code is TypeScript only.
+- **License headers:** every source file (including `.ts`, `.tsx` and shell scripts) carries the Apache 2.0 header managed by `license-maven-plugin`. Run `mvn license:format` after adding files.
