@@ -51,7 +51,7 @@ if curl -s -o /dev/null -w "%{http_code}" "${BASE_URL}/api/connectors" | grep -q
         \"name\": \"Grpc_Push_Connector\",
         \"description\": \"gRPC Push Repository Ingestion Endpoint\",
         \"type\": \"repository\",
-        \"className\": \"org.opencrawling.connector.grpcpush.GrpcPushRepositoryConnector\",
+        \"className\": \"org.opencrawling.push.grpc.GrpcPushRepositoryConnector\",
         \"maxConnections\": 100,
         \"configuration\": {
           \"host\": \"${GRPC_HOST}\",

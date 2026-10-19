@@ -33,7 +33,7 @@
 [![OIS](https://img.shields.io/badge/OIS-Open_Ingestion_Standard-0052CC.svg?style=flat)](https://github.com/opencrawling/open-ingestion-standard)
 [![MCP](https://img.shields.io/badge/MCP-Model_Context_Protocol-8A2BE2.svg?style=flat&logo=anthropic&logoColor=white)](https://modelcontextprotocol.io/)
 [![gRPC Transport](https://img.shields.io/badge/gRPC-Internal_Transport-4285F4.svg?style=flat&logo=grpc&logoColor=white)](#-grpc-high-performance-internal-transport)
-[![gRPC Push Connector](https://img.shields.io/badge/gRPC-Push_Connector-4285F4.svg?style=flat&logo=grpc&logoColor=white)](docs/gRPC-Push-Connector.md)
+[![gRPC Push Connector](https://img.shields.io/badge/gRPC-Push_Connector-4285F4.svg?style=flat&logo=grpc&logoColor=white)](https://github.com/opencrawling/opencrawling/wiki/gRPC-Push-Repository-Connector)
 [![OpenTelemetry](https://img.shields.io/badge/OpenTelemetry-AIOps-7B42BC.svg?style=flat&logo=opentelemetry&logoColor=white)](https://opentelemetry.io/)
 [![OpenAPI 3.1](https://img.shields.io/badge/OpenAPI-3.1-6BA539.svg?style=flat&logo=openapiinitiative&logoColor=white)](#-openapi-31--interactive-swagger-ui)
 [![Maven Archetypes](https://img.shields.io/badge/Maven_Archetypes-Supported-C71A36.svg?style=flat&logo=apachemaven&logoColor=white)](#-custom-connectors-maven-archetypes-suite)
