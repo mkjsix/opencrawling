@@ -37,6 +37,7 @@ import java.util.*;
 import static io.qdrant.client.ConditionFactory.matchKeyword;
 
 @Component
+@ConditionalOnProperty(name = "opencrawling.mcp.server.enabled", havingValue = "true", matchIfMissing = true)
 @ConditionalOnProperty(name = "spring.opencrawling.output.type", havingValue = "qdrant")
 public class QdrantMcpSearchBackend implements McpVectorSearchBackend {
 
@@ -51,10 +52,10 @@ public class QdrantMcpSearchBackend implements McpVectorSearchBackend {
             QdrantClient qdrantClient,
             QdrantOutputProperties properties,
             @Autowired(required = false) @Qualifier("ollamaEmbeddingModel") EmbeddingModel ollamaEmbeddingModel,
-            @Autowired(required = false) EmbeddingModel defaultEmbeddingModel) {
+            @Autowired(required = false) @Qualifier("openAiEmbeddingModel") EmbeddingModel openAiEmbeddingModel) {
         this.qdrantClient = qdrantClient;
         this.properties = properties;
-        this.embeddingModel = (ollamaEmbeddingModel != null) ? ollamaEmbeddingModel : defaultEmbeddingModel;
+        this.embeddingModel = (ollamaEmbeddingModel != null) ? ollamaEmbeddingModel : openAiEmbeddingModel;
         log.info("Initialized QdrantMcpSearchBackend for collection '{}'.", properties.collectionName());
     }
 

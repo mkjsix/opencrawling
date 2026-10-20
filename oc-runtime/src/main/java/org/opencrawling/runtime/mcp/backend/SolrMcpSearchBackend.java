@@ -37,6 +37,7 @@ import org.springframework.stereotype.Component;
 import java.util.*;
 
 @Component
+@ConditionalOnProperty(name = "opencrawling.mcp.server.enabled", havingValue = "true", matchIfMissing = true)
 @ConditionalOnProperty(name = "spring.opencrawling.output.type", havingValue = "solr")
 public class SolrMcpSearchBackend implements McpVectorSearchBackend {
 
@@ -51,10 +52,10 @@ public class SolrMcpSearchBackend implements McpVectorSearchBackend {
             SolrClient solrClient,
             SolrOutputProperties properties,
             @Autowired(required = false) @Qualifier("ollamaEmbeddingModel") EmbeddingModel ollamaEmbeddingModel,
-            @Autowired(required = false) EmbeddingModel defaultEmbeddingModel) {
+            @Autowired(required = false) @Qualifier("openAiEmbeddingModel") EmbeddingModel openAiEmbeddingModel) {
         this.solrClient = solrClient;
         this.properties = properties;
-        this.embeddingModel = (ollamaEmbeddingModel != null) ? ollamaEmbeddingModel : defaultEmbeddingModel;
+        this.embeddingModel = (ollamaEmbeddingModel != null) ? ollamaEmbeddingModel : openAiEmbeddingModel;
         log.info("Initialized SolrMcpSearchBackend for collection '{}'.", properties.collection());
     }
 

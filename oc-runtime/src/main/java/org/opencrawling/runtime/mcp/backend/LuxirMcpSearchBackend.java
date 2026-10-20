@@ -32,6 +32,7 @@ import org.springframework.stereotype.Component;
 import java.util.*;
 
 @Component
+@ConditionalOnProperty(name = "opencrawling.mcp.server.enabled", havingValue = "true", matchIfMissing = true)
 @ConditionalOnProperty(name = "spring.opencrawling.output.type", havingValue = "luxir")
 public class LuxirMcpSearchBackend implements McpVectorSearchBackend {
 
@@ -46,10 +47,10 @@ public class LuxirMcpSearchBackend implements McpVectorSearchBackend {
             LuxirClient luxirClient,
             LuxirOutputProperties properties,
             @Autowired(required = false) @Qualifier("ollamaEmbeddingModel") EmbeddingModel ollamaEmbeddingModel,
-            @Autowired(required = false) EmbeddingModel defaultEmbeddingModel) {
+            @Autowired(required = false) @Qualifier("openAiEmbeddingModel") EmbeddingModel openAiEmbeddingModel) {
         this.luxirClient = luxirClient;
         this.properties = properties;
-        this.embeddingModel = (ollamaEmbeddingModel != null) ? ollamaEmbeddingModel : defaultEmbeddingModel;
+        this.embeddingModel = (ollamaEmbeddingModel != null) ? ollamaEmbeddingModel : openAiEmbeddingModel;
         log.info("Initialized LuxirMcpSearchBackend for collection '{}'.", properties.collection());
     }
 

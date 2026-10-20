@@ -35,7 +35,6 @@ import java.util.*;
  */
 @Component
 @ConditionalOnProperty(name = "opencrawling.mcp.server.enabled", havingValue = "true", matchIfMissing = true)
-@ConditionalOnBean(McpVectorSearchBackend.class)
 public class McpVectorServer {
 
     private static final Logger log = LoggerFactory.getLogger(McpVectorServer.class);
@@ -43,10 +42,14 @@ public class McpVectorServer {
     private final McpVectorSearchBackend backend;
 
     @Autowired
-    public McpVectorServer(McpVectorSearchBackend backend) {
+    public McpVectorServer(@Autowired(required = false) McpVectorSearchBackend backend) {
         this.backend = backend;
-        log.info("Initialized OpenCrawling Secure MCP Server backed by {} (SPI: {}).",
-                backend.backendType(), backend.getClass().getSimpleName());
+        if (backend != null) {
+            log.info("Initialized OpenCrawling Secure MCP Server backed by {} (SPI: {}).",
+                    backend.backendType(), backend.getClass().getSimpleName());
+        } else {
+            log.info("OpenCrawling Secure MCP Server initialized without active vector backend (observability/metadata only).");
+        }
     }
 
     /**
@@ -92,6 +95,9 @@ public class McpVectorServer {
             @McpToolParam(description = "Minimum similarity threshold score (0.0 to 1.0)", required = false) Double minScore,
             @McpToolParam(description = "Dimensions of the target vector store to query (384, 768, 1024)", required = false) Integer dimensions
     ) {
+        if (backend == null) {
+            throw new IllegalStateException("Vector search is unavailable: no vector database backend is configured for the active output type.");
+        }
         int limit = (maxResults != null && maxResults > 0) ? maxResults : 5;
         double threshold = (minScore != null) ? minScore : 0.0;
         List<String> rolesList = McpAclEvaluator.parseRoles(userRoles);
@@ -105,6 +111,9 @@ public class McpVectorServer {
             @McpToolParam(description = "Comma-separated list of groups/roles the caller belongs to", required = false) String userRoles,
             @McpToolParam(description = "Dimensions of the target vector store to query (384, 768, 1024)", required = false) Integer dimensions
     ) {
+        if (backend == null) {
+            throw new IllegalStateException("Document retrieval is unavailable: no vector database backend is configured for the active output type.");
+        }
         List<String> rolesList = McpAclEvaluator.parseRoles(userRoles);
         return backend.getDocumentContent(documentUri, userPrincipal, rolesList, dimensions);
     }
@@ -115,6 +124,9 @@ public class McpVectorServer {
             @McpToolParam(description = "Comma-separated list of groups/roles the caller belongs to", required = false) String userRoles,
             @McpToolParam(description = "Dimensions of the target vector store to query (384, 768, 1024)", required = false) Integer dimensions
     ) {
+        if (backend == null) {
+            return Collections.emptyList();
+        }
         List<String> rolesList = McpAclEvaluator.parseRoles(userRoles);
         return backend.listAccessibleSources(userPrincipal, rolesList, dimensions);
     }

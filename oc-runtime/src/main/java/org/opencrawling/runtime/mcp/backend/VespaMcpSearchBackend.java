@@ -41,6 +41,7 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 @Component
+@ConditionalOnProperty(name = "opencrawling.mcp.server.enabled", havingValue = "true", matchIfMissing = true)
 @ConditionalOnProperty(name = "spring.opencrawling.output.type", havingValue = "vespa")
 public class VespaMcpSearchBackend implements McpVectorSearchBackend {
 
@@ -54,9 +55,9 @@ public class VespaMcpSearchBackend implements McpVectorSearchBackend {
     public VespaMcpSearchBackend(
             VespaOutputProperties properties,
             @Autowired(required = false) @Qualifier("ollamaEmbeddingModel") EmbeddingModel ollamaEmbeddingModel,
-            @Autowired(required = false) EmbeddingModel defaultEmbeddingModel) {
+            @Autowired(required = false) @Qualifier("openAiEmbeddingModel") EmbeddingModel openAiEmbeddingModel) {
         this.properties = properties;
-        this.embeddingModel = (ollamaEmbeddingModel != null) ? ollamaEmbeddingModel : defaultEmbeddingModel;
+        this.embeddingModel = (ollamaEmbeddingModel != null) ? ollamaEmbeddingModel : openAiEmbeddingModel;
         log.info("Initialized VespaMcpSearchBackend (endpoint: {}).", properties.endpoint());
     }
 

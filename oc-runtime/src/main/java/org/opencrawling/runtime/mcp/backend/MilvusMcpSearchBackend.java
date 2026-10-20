@@ -37,6 +37,7 @@ import org.springframework.stereotype.Component;
 import java.util.*;
 
 @Component
+@ConditionalOnProperty(name = "opencrawling.mcp.server.enabled", havingValue = "true", matchIfMissing = true)
 @ConditionalOnProperty(name = "spring.opencrawling.output.type", havingValue = "milvus")
 public class MilvusMcpSearchBackend implements McpVectorSearchBackend {
 
@@ -69,9 +70,9 @@ public class MilvusMcpSearchBackend implements McpVectorSearchBackend {
     public MilvusMcpSearchBackend(
             MilvusClientV2 milvusClient,
             @Autowired(required = false) @Qualifier("ollamaEmbeddingModel") EmbeddingModel ollamaEmbeddingModel,
-            @Autowired(required = false) EmbeddingModel defaultEmbeddingModel) {
+            @Autowired(required = false) @Qualifier("openAiEmbeddingModel") EmbeddingModel openAiEmbeddingModel) {
         this.milvusClient = milvusClient;
-        this.embeddingModel = (ollamaEmbeddingModel != null) ? ollamaEmbeddingModel : defaultEmbeddingModel;
+        this.embeddingModel = (ollamaEmbeddingModel != null) ? ollamaEmbeddingModel : openAiEmbeddingModel;
         log.info("Initialized MilvusMcpSearchBackend.");
     }
 

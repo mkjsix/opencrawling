@@ -35,8 +35,8 @@ import org.springframework.stereotype.Component;
 import java.util.*;
 
 @Component
+@ConditionalOnProperty(name = "opencrawling.mcp.server.enabled", havingValue = "true", matchIfMissing = true)
 @ConditionalOnProperty(name = "spring.opencrawling.output.type", havingValue = "pgvector", matchIfMissing = true)
-@ConditionalOnBean(VectorStore.class)
 public class PgVectorMcpSearchBackend implements McpVectorSearchBackend {
 
     private static final Logger log = LoggerFactory.getLogger(PgVectorMcpSearchBackend.class);
@@ -54,12 +54,12 @@ public class PgVectorMcpSearchBackend implements McpVectorSearchBackend {
             @Qualifier("vectorStore768") VectorStore vectorStore768,
             @Qualifier("vectorStore1024") VectorStore vectorStore1024,
             @Autowired(required = false) @Qualifier("ollamaEmbeddingModel") EmbeddingModel ollamaEmbeddingModel,
-            @Autowired(required = false) EmbeddingModel defaultEmbeddingModel) {
+            @Autowired(required = false) @Qualifier("openAiEmbeddingModel") EmbeddingModel openAiEmbeddingModel) {
         this.vectorStore = vectorStore;
         this.vectorStore384 = vectorStore384;
         this.vectorStore768 = vectorStore768;
         this.vectorStore1024 = vectorStore1024;
-        this.embeddingModel = (ollamaEmbeddingModel != null) ? ollamaEmbeddingModel : defaultEmbeddingModel;
+        this.embeddingModel = (ollamaEmbeddingModel != null) ? ollamaEmbeddingModel : openAiEmbeddingModel;
         log.info("Initialized PgVectorMcpSearchBackend.");
     }
 
