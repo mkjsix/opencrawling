@@ -357,6 +357,7 @@ services:
     depends_on:
       - postgres
       - redis
+      - ollama
     networks:
       opencrawling-network:
         aliases:

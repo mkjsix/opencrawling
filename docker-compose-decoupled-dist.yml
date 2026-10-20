@@ -280,6 +280,7 @@ services:
       - SPRING_DATA_REDIS_HOST=redis
       - SPRING_DATA_REDIS_PASSWORD=redis_password
       - SPRING_KAFKA_BOOTSTRAP_SERVERS=kafka:9094
+      - SPRING_AI_OLLAMA_BASE_URL=http://ollama:11434
       - OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://otel-collector:4318/v1/traces
       - OPENCRAWLING_OBSERVABILITY_ENABLED=true
       - OPENCRAWLING_OBSERVABILITY_SAMPLING_PROBABILITY=1.0
@@ -295,6 +296,7 @@ services:
     depends_on:
       - postgres
       - redis
+      - ollama
     networks:
       opencrawling-network:
         aliases:

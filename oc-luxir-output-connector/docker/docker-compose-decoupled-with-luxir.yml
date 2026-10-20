@@ -278,6 +278,7 @@ services:
       - SPRING_DATA_REDIS_HOST=redis
       - SPRING_DATA_REDIS_PASSWORD=redis_password
       - SPRING_KAFKA_BOOTSTRAP_SERVERS=kafka:9094
+      - SPRING_AI_OLLAMA_BASE_URL=http://ollama:11434
       - SPRING_OPENCRAWLING_OUTPUT_TYPE=luxir
       - SPRING_OPENCRAWLING_OUTPUT_LUXIR_ENDPOINT=http://luxir:9400
       - SPRING_OPENCRAWLING_OUTPUT_LUXIR_COLLECTION=opencrawling
@@ -289,6 +290,8 @@ services:
       - opencrawling-reportsdata-luxir:/data/reports
     depends_on:
       - redis
+      - ollama
+      - luxir
     networks:
       opencrawling-network:
         aliases:

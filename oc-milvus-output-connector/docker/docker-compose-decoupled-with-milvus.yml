@@ -302,6 +302,7 @@ services:
       - SPRING_DATA_REDIS_HOST=redis
       - SPRING_DATA_REDIS_PASSWORD=redis_password
       - SPRING_KAFKA_BOOTSTRAP_SERVERS=kafka:9094
+      - SPRING_AI_OLLAMA_BASE_URL=http://ollama:11434
       - SPRING_OPENCRAWLING_OUTPUT_TYPE=milvus
       - SPRING_OPENCRAWLING_OUTPUT_MILVUS_URI=http://milvus-standalone:19530
       - SPRING_AUTOCONFIGURE_EXCLUDE=org.springframework.ai.autoconfigure.vectorstore.pgvector.PgVectorStoreAutoConfiguration
@@ -311,6 +312,8 @@ services:
       - opencrawling-reportsdata-milvus:/data/reports
     depends_on:
       - redis
+      - ollama
+      - milvus-standalone
     networks:
       opencrawling-network:
         aliases:
