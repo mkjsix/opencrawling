@@ -1,0 +1,13 @@
+{
+  "AccessControlList": {
+    "CustomComponent": {
+      "AccessControlEntries": [
+        {
+          "UserOrGroupID": 1,
+          "IsGroup": true,
+          "ReadPermission": "Allow"
+        }
+      ]
+    }
+  }
+}

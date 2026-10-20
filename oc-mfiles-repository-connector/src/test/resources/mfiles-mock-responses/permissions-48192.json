@@ -1,0 +1,48 @@
+{
+  "AccessControlList": {
+    "CustomComponent": {
+      "AccessControlEntries": [
+        {
+          "UserOrGroupID": 12,
+          "IsGroup": false,
+          "ReadPermission": "Allow",
+          "EditPermission": "Allow"
+        },
+        {
+          "UserOrGroupID": 5,
+          "IsGroup": true,
+          "ReadPermission": "Allow"
+        },
+        {
+          "UserOrGroupID": 7,
+          "IsGroup": true,
+          "ReadPermission": "Allow"
+        },
+        {
+          "UserOrGroupID": 9,
+          "IsGroup": false,
+          "ReadPermission": "Deny"
+        }
+      ]
+    },
+    "NamedACLComponent": {
+      "AccessControlEntries": [
+        {
+          "UserOrGroupID": 12,
+          "IsGroup": false,
+          "ReadPermission": "Allow"
+        },
+        {
+          "UserOrGroupID": 5,
+          "IsGroup": true,
+          "ReadPermission": "Allow"
+        },
+        {
+          "UserOrGroupID": 1001,
+          "IsPseudoUser": true,
+          "ReadPermission": "Allow"
+        }
+      ]
+    }
+  }
+}
