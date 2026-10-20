@@ -400,7 +400,7 @@ public class MFilesClient implements AutoCloseable {
     }
 
     /** The {@code Items} of a {@code Results<T>} / {@code FolderContentItems}, or the elements of a bare array. */
-    static List<JsonNode> items(JsonNode node) {
+    public static List<JsonNode> items(JsonNode node) {
         JsonNode array = node.isArray() ? node : node.has("Items") ? node.path("Items") : node.path("items");
         List<JsonNode> items = new ArrayList<>();
         array.forEach(items::add);
