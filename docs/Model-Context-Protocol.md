@@ -96,6 +96,28 @@ docker compose -f oc-vespa-output-connector/docker/docker-compose-decoupled-with
 
 ---
 
+## 🧪 Running the Decoupled Integration Test Suite
+
+OpenCrawling includes an end-to-end integration test specifically for validating the entire MCP server capabilities in a decoupled multi-container deployment:
+
+```bash
+./scripts/test-mcp-decoupled.sh
+```
+
+This dedicated test suite automatically validates:
+1. **MCP Transport & Protocol Handshake**: JSON-RPC 2.0 `initialize` negotiation, session ID creation (`Mcp-Session-Id`), `notifications/initialized`, and `ping`.
+2. **Dynamic Tool Discovery (`tools/list`)**: Verifies advertised tools and schemas for both Vector Knowledge (`secureVectorSearch`, `getDocumentContent`, `listAccessibleSources`) and AIOps Observability (`fetchJobTraces`, `getErrorLogs`, `queryThroughputMetrics`).
+3. **Live AIOps Tool Invocations (`tools/call`)**: Validates execution of observability tools with simulated and real trace breakdowns.
+4. **Decoupled OIS Multi-ACL Ingestion Pipeline**: Ingests multi-ACL documents (public, role-restricted, explicit deny) through Kafka into pgvector.
+5. **Zero-Trust Security & Explicit Deny Precedence**: Verifies that LLM tool callers only receive documents permitted by their principal and roles, and that explicit deny rules authoritatively supersede group allowances.
+6. **Identity-Aware Document Retrieval & Discovery**: Validates `getDocumentContent` access gates and `listAccessibleSources` identity scoping.
+7. **Multi-Dimension Index Resolution**: Exercises dimension-aware vector querying (384, 768, 1024).
+8. **OIS Tombstone DELETE Lifecycle**: Validates that deleted documents are purged from MCP search results.
+9. **REST API Fallback Parity**: Confirms consistency across `/api/observability/*` and MCP tools.
+10. **In-Process SPI & Unit Test Parity**: Runs JUnit assertions covering the `McpVectorSearchBackend` SPI and `McpAclEvaluator`.
+
+---
+
 ## 💻 Claude Desktop Configuration
 
 To connect Claude Desktop to your OpenCrawling Secure MCP Server, add the following entry to your `claude_desktop_config.json`:

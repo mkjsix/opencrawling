@@ -59,6 +59,7 @@ spring:
       server:
         name: "opencrawling-secure-vector-mcp"
         version: "1.0.0"
+        protocol: ${SPRING_AI_MCP_SERVER_PROTOCOL:STREAMABLE}
         transport: STREAMABLE_HTTP
         annotation-scanner:
           enabled: true
