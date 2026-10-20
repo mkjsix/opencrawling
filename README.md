@@ -75,6 +75,7 @@ graph TD
         APS_Conn[Alfresco Process Services - oc-aps-repository-connector]
         CMIS_Conn[OASIS CMIS Repository - oc-cmis-repository-connector]
         Doxis_Repo_Conn[Doxis 4 Repository - oc-doxis-repository-connector]
+        MFiles_Repo_Conn[M-Files Vault - oc-mfiles-repository-connector]
         Iceberg_Conn[Iceberg Repository - oc-iceberg-repository-connector]
         Flowable_Conn[Flowable Repository - oc-flowable-repository-connector]
         Camunda_Conn[Camunda Repository - oc-camunda-repository-connector]
@@ -510,7 +511,7 @@ docker compose -f docker/docker-compose.dist.yml -f docker/docker-compose.overri
 - **Apache Ozone 2.2.0**: High-performance distributed object store offloading large document payloads with dual client strategy:
   - **Native Ozone Client (`ofs` / `o3fs`)**: Direct gRPC/RPC transport to DataNodes & Ozone Manager (OM) for maximum throughput.
   - **S3 Gateway Client (`s3g`)**: Standard AWS S3 SDK integration hitting Ozone's S3 Gateway endpoint for maximum cloud versatility.
-- **Repository Connectors**: Multi-source connectors for Filesystem, Alfresco Content Services (ACS), **Alfresco Process Services (APS)**, **OASIS CMIS (1.0/1.1)**, **Doxis 4 (CSB REST)**, Apache Iceberg, Flowable BPMN, Camunda, Apache StormCrawler, and **gRPC Push Ingestion Gateway**.
+- **Repository Connectors**: Multi-source connectors for Filesystem, Alfresco Content Services (ACS), **Alfresco Process Services (APS)**, **OASIS CMIS (1.0/1.1)**, **Doxis 4 (CSB REST)**, **M-Files (MFWS REST)**, Apache Iceberg, Flowable BPMN, Camunda, Apache StormCrawler, and **gRPC Push Ingestion Gateway**.
 - **pgvector**: High-dimensional vector similarity search in PostgreSQL.
 - **Milvus**: High-performance, distributed vector database for large-scale enterprise vector indexing.
 - **Qdrant**: Rust-based vector search engine with payload-indexed ACL pre-filtering and optional scalar/binary quantization.
@@ -882,6 +883,40 @@ mvn spring-boot:run -pl oc-runtime -Dspring-boot.run.profiles=dev
 
 In the Admin UI it is the **Doxis Repository** repository connector. See
 [oc-doxis-repository-connector/README.md](oc-doxis-repository-connector/README.md).
+
+### Option A.8.c: M-Files Vault Crawling
+
+[![M-Files](https://img.shields.io/badge/M--Files-MFWS_REST-0072CE.svg?style=flat)](https://www.m-files.com/)
+
+To crawl an [M-Files](https://www.m-files.com/) vault, select the M-Files repository connector and point it at the
+M-Files Web Service (MFWS):
+
+> **Prerequisites:** you need a licensed M-Files Server with the M-Files Web Service (REST API) enabled, and an M-Files
+> account with read access to the vault (or an OAuth2 / Entra ID client the vault accepts). OpenCrawling doesn't include
+> M-Files or any M-Files licence. See the [full prerequisites](oc-mfiles-repository-connector/README.md#prerequisites)
+> before configuring a crawl.
+
+```bash
+SPRING_OPENCRAWLING_REPOSITORY_CONNECTOR_TYPE=mfiles \
+SPRING_OPENCRAWLING_CONNECTOR_TYPE=mfiles \
+SPRING_OPENCRAWLING_CONNECTOR_MFILES_URL=https://<mfiles-host>/REST \
+SPRING_OPENCRAWLING_CONNECTOR_MFILES_VAULT_GUID="{<vault-guid>}" \
+SPRING_OPENCRAWLING_CONNECTOR_MFILES_USERNAME=<user> \
+SPRING_OPENCRAWLING_CONNECTOR_MFILES_PASSWORD=<password> \
+SPRING_OPENCRAWLING_CONNECTOR_MFILES_CLASS_IDS=14,22 \
+mvn spring-boot:run -pl oc-runtime -Dspring-boot.run.profiles=dev
+```
+
+`MFilesRepositoryConnector` reads objects through the MFWS REST API.
+- **What it crawls:** MFWS searches by object type, class and conditions (`crawl-mode: search` / `all_objects`), an
+  M-Files view (`view`), or the change feed of a Vault Application Framework app (`vaf`).
+- **What each document carries:** the object's typed property values, its file (one OIS document per file for a
+  multi-file document), and its permissions as OIS permissions, deny by default.
+- **Deletes:** deleted objects become `DELETE` tombstones; incremental crawls also purge files an object no longer has.
+- **Sessions:** a scan uses one MFWS session and always ends it.
+
+In the Admin UI it is the **M-Files Repository** repository connector. See
+[oc-mfiles-repository-connector/README.md](oc-mfiles-repository-connector/README.md).
 
 ### Option A.9: Decoupled Apache SeaTunnel-Based Deployment
 
