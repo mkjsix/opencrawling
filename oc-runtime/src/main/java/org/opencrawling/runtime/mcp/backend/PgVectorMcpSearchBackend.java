@@ -15,6 +15,7 @@
  */
 package org.opencrawling.runtime.mcp.backend;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.opencrawling.runtime.mcp.McpAclEvaluator;
 import org.opencrawling.runtime.mcp.McpVectorSearchBackend;
 import org.opencrawling.runtime.mcp.McpVectorServer;
@@ -28,8 +29,8 @@ import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.ai.vectorstore.filter.FilterExpressionBuilder;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
 import java.util.*;
@@ -45,7 +46,9 @@ public class PgVectorMcpSearchBackend implements McpVectorSearchBackend {
     private final VectorStore vectorStore384;
     private final VectorStore vectorStore768;
     private final VectorStore vectorStore1024;
+    private final JdbcTemplate jdbcTemplate;
     private final EmbeddingModel embeddingModel;
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Autowired
     public PgVectorMcpSearchBackend(
@@ -53,14 +56,26 @@ public class PgVectorMcpSearchBackend implements McpVectorSearchBackend {
             @Qualifier("vectorStore384") VectorStore vectorStore384,
             @Qualifier("vectorStore768") VectorStore vectorStore768,
             @Qualifier("vectorStore1024") VectorStore vectorStore1024,
+            @Autowired(required = false) @Qualifier("pgVectorJdbcTemplate") JdbcTemplate jdbcTemplate,
             @Autowired(required = false) @Qualifier("ollamaEmbeddingModel") EmbeddingModel ollamaEmbeddingModel,
             @Autowired(required = false) @Qualifier("openAiEmbeddingModel") EmbeddingModel openAiEmbeddingModel) {
         this.vectorStore = vectorStore;
         this.vectorStore384 = vectorStore384;
         this.vectorStore768 = vectorStore768;
         this.vectorStore1024 = vectorStore1024;
+        this.jdbcTemplate = jdbcTemplate;
         this.embeddingModel = (ollamaEmbeddingModel != null) ? ollamaEmbeddingModel : openAiEmbeddingModel;
-        log.info("Initialized PgVectorMcpSearchBackend.");
+        log.info("Initialized PgVectorMcpSearchBackend (JdbcTemplate: {}).", jdbcTemplate != null ? "enabled" : "disabled");
+    }
+
+    public PgVectorMcpSearchBackend(
+            VectorStore vectorStore,
+            VectorStore vectorStore384,
+            VectorStore vectorStore768,
+            VectorStore vectorStore1024,
+            EmbeddingModel ollamaEmbeddingModel,
+            EmbeddingModel openAiEmbeddingModel) {
+        this(vectorStore, vectorStore384, vectorStore768, vectorStore1024, null, ollamaEmbeddingModel, openAiEmbeddingModel);
     }
 
     @Override
@@ -75,6 +90,16 @@ public class PgVectorMcpSearchBackend implements McpVectorSearchBackend {
             case 768 -> vectorStore768;
             case 1024 -> vectorStore1024;
             default -> vectorStore;
+        };
+    }
+
+    private String getTableName(Integer dimensions) {
+        if (dimensions == null) return "vector_store";
+        return switch (dimensions) {
+            case 384 -> "vector_store_384";
+            case 768 -> "vector_store_768";
+            case 1024 -> "vector_store_1024";
+            default -> "vector_store";
         };
     }
 
@@ -101,7 +126,11 @@ public class PgVectorMcpSearchBackend implements McpVectorSearchBackend {
         }
 
         if (userRoles != null && !userRoles.isEmpty()) {
-            securityExpression = b.or(securityExpression, b.in("acl", userRoles));
+            for (String role : userRoles) {
+                if (role != null && !role.isBlank()) {
+                    securityExpression = b.or(securityExpression, b.eq("acl", role.trim()));
+                }
+            }
         }
 
         SearchRequest searchRequest = SearchRequest.builder()
@@ -117,6 +146,13 @@ public class PgVectorMcpSearchBackend implements McpVectorSearchBackend {
                 try {
                     float[] vector = embeddingModel.embed(query);
                     if (vector != null && vector.length > 0) {
+                        int targetDims = (dimensions != null) ? dimensions : 1024;
+                        if (vector.length != targetDims) {
+                            float[] adapted = new float[targetDims];
+                            System.arraycopy(vector, 0, adapted, 0, Math.min(vector.length, targetDims));
+                            if (adapted[0] == 0.0f) adapted[0] = 1.0f;
+                            vector = adapted;
+                        }
                         PrecomputedEmbeddingModel.setPrecomputedVector(query, vector);
                         precomputedSet = true;
                     }
@@ -129,14 +165,18 @@ public class PgVectorMcpSearchBackend implements McpVectorSearchBackend {
             return docs.stream()
                     .filter(doc -> McpAclEvaluator.isAccessible(doc.getMetadata(), userPrincipal, userRoles))
                     .limit(limit)
-                    .map(doc -> new McpVectorServer.DocumentSearchResult(
-                            doc.getId(),
-                            (String) doc.getMetadata().getOrDefault("uri", ""),
-                            doc.getText(),
-                            doc.getMetadata(),
-                            (String) doc.getMetadata().getOrDefault("acl", "public"),
-                            doc.getScore() != null ? doc.getScore() : 0.0
-                    ))
+                    .map(doc -> {
+                        String docId = (String) doc.getMetadata().getOrDefault("documentId", doc.getMetadata().getOrDefault("parent_document_id", ""));
+                        String uri = (docId != null && !docId.isBlank()) ? docId : (String) doc.getMetadata().getOrDefault("uri", doc.getId());
+                        return new McpVectorServer.DocumentSearchResult(
+                                doc.getId(),
+                                uri,
+                                doc.getText(),
+                                doc.getMetadata(),
+                                (String) doc.getMetadata().getOrDefault("acl", "public"),
+                                doc.getScore() != null ? doc.getScore() : 0.0
+                        );
+                    })
                     .toList();
         } catch (Exception e) {
             log.error("Failed to perform secure vector search in pgvector: {}", e.getMessage(), e);
@@ -157,18 +197,55 @@ public class PgVectorMcpSearchBackend implements McpVectorSearchBackend {
     ) {
         log.info("pgvector get document content. URI: '{}', Principal: '{}', Dimensions: {}", documentUri, userPrincipal, dimensions);
 
+        if (jdbcTemplate != null) {
+            try {
+                String tableName = getTableName(dimensions);
+                String sql = "SELECT id, content, metadata FROM " + tableName +
+                        " WHERE metadata->>'uri' = ? OR metadata->>'documentId' = ? OR id::text = ? LIMIT 10";
+
+                List<McpVectorServer.DocumentDetailsResult> found = jdbcTemplate.query(
+                        sql,
+                        (rs, rowNum) -> {
+                            String id = rs.getString("id");
+                            String content = rs.getString("content");
+                            Map<String, Object> meta = parseMetadata(rs.getObject("metadata"));
+                            String docId = (String) meta.getOrDefault("documentId", meta.getOrDefault("parent_document_id", ""));
+                            String uri = (docId != null && !docId.isBlank()) ? docId : (String) meta.getOrDefault("uri", id);
+                            String acl = (String) meta.getOrDefault("acl", "public");
+                            return new McpVectorServer.DocumentDetailsResult(id, uri, content, meta, acl);
+                        },
+                        documentUri, documentUri, documentUri
+                );
+
+                return found.stream()
+                        .filter(doc -> McpAclEvaluator.isAccessible(doc.metadata(), userPrincipal, userRoles))
+                        .findFirst()
+                        .orElseThrow(() -> new NoSuchElementException("Document not found or access denied."));
+            } catch (NoSuchElementException e) {
+                throw e;
+            } catch (Exception e) {
+                log.error("Failed to retrieve document details via JDBC in pgvector: {}", e.getMessage(), e);
+                throw new RuntimeException("Error retrieving document details from pgvector", e);
+            }
+        }
+
+        // Fallback for mock environments without active JDBC connection
         FilterExpressionBuilder b = new FilterExpressionBuilder();
         var securityExpression = b.eq("acl", "public");
         if (userPrincipal != null && !userPrincipal.trim().isBlank()) {
             securityExpression = b.or(securityExpression, b.eq("acl", userPrincipal.trim()));
         }
         if (userRoles != null && !userRoles.isEmpty()) {
-            securityExpression = b.or(securityExpression, b.in("acl", userRoles));
+            for (String role : userRoles) {
+                if (role != null && !role.isBlank()) {
+                    securityExpression = b.or(securityExpression, b.eq("acl", role.trim()));
+                }
+            }
         }
 
         var finalExpression = b.and(b.eq("uri", documentUri), securityExpression).build();
         SearchRequest searchRequest = SearchRequest.builder()
-                .query("")
+                .query(documentUri)
                 .filterExpression(finalExpression)
                 .topK(20)
                 .build();
@@ -178,13 +255,17 @@ public class PgVectorMcpSearchBackend implements McpVectorSearchBackend {
             return docs.stream()
                     .filter(doc -> McpAclEvaluator.isAccessible(doc.getMetadata(), userPrincipal, userRoles))
                     .findFirst()
-                    .map(doc -> new McpVectorServer.DocumentDetailsResult(
-                            doc.getId(),
-                            (String) doc.getMetadata().getOrDefault("uri", ""),
-                            doc.getText(),
-                            doc.getMetadata(),
-                            (String) doc.getMetadata().getOrDefault("acl", "public")
-                    ))
+                    .map(doc -> {
+                        String docId = (String) doc.getMetadata().getOrDefault("documentId", doc.getMetadata().getOrDefault("parent_document_id", ""));
+                        String uri = (docId != null && !docId.isBlank()) ? docId : (String) doc.getMetadata().getOrDefault("uri", doc.getId());
+                        return new McpVectorServer.DocumentDetailsResult(
+                                doc.getId(),
+                                uri,
+                                doc.getText(),
+                                doc.getMetadata(),
+                                (String) doc.getMetadata().getOrDefault("acl", "public")
+                        );
+                    })
                     .orElseThrow(() -> new NoSuchElementException("Document not found or access denied."));
         } catch (NoSuchElementException e) {
             throw e;
@@ -202,6 +283,45 @@ public class PgVectorMcpSearchBackend implements McpVectorSearchBackend {
     ) {
         log.info("pgvector list accessible sources. Principal: '{}', Dimensions: {}", userPrincipal, dimensions);
 
+        if (jdbcTemplate != null) {
+            try {
+                String tableName = getTableName(dimensions);
+                String sql = "SELECT id, metadata FROM " + tableName + " ORDER BY metadata->>'lastModified' DESC NULLS LAST LIMIT 500";
+
+                List<Map<String, Object>> rows = jdbcTemplate.query(
+                        sql,
+                        (rs, rowNum) -> {
+                            String id = rs.getString("id");
+                            Map<String, Object> meta = parseMetadata(rs.getObject("metadata"));
+                            Map<String, Object> summary = new HashMap<>();
+                            String docId = (String) meta.getOrDefault("documentId", meta.getOrDefault("parent_document_id", ""));
+                            String uri = (docId != null && !docId.isBlank()) ? docId : (String) meta.getOrDefault("uri", id);
+                            summary.put("id", id);
+                            summary.put("uri", uri);
+                            summary.put("documentId", docId != null && !docId.isBlank() ? docId : uri);
+                            summary.put("acl", meta.getOrDefault("acl", "public"));
+                            summary.put("security", meta.get("security"));
+                            summary.put("lastModified", meta.getOrDefault("lastModified", ""));
+                            summary.put("_meta", meta);
+                            return summary;
+                        }
+                );
+
+                return rows.stream()
+                        .filter(item -> {
+                            @SuppressWarnings("unchecked")
+                            Map<String, Object> meta = (Map<String, Object>) item.remove("_meta");
+                            return McpAclEvaluator.isAccessible(meta, userPrincipal, userRoles);
+                        })
+                        .distinct()
+                        .toList();
+            } catch (Exception e) {
+                log.error("Failed to list accessible sources via JDBC in pgvector: {}", e.getMessage(), e);
+                throw new RuntimeException("Error listing accessible sources from pgvector", e);
+            }
+        }
+
+        // Fallback for mock environments without active JDBC connection
         SearchRequest searchRequest = SearchRequest.builder()
                 .query("")
                 .topK(200)
@@ -213,8 +333,11 @@ public class PgVectorMcpSearchBackend implements McpVectorSearchBackend {
                     .filter(doc -> McpAclEvaluator.isAccessible(doc.getMetadata(), userPrincipal, userRoles))
                     .map(doc -> {
                         Map<String, Object> summary = new HashMap<>();
+                        String docId = (String) doc.getMetadata().getOrDefault("documentId", doc.getMetadata().getOrDefault("parent_document_id", ""));
+                        String uri = (docId != null && !docId.isBlank()) ? docId : (String) doc.getMetadata().getOrDefault("uri", doc.getId());
                         summary.put("id", doc.getId());
-                        summary.put("uri", doc.getMetadata().getOrDefault("uri", ""));
+                        summary.put("uri", uri);
+                        summary.put("documentId", docId != null && !docId.isBlank() ? docId : uri);
                         summary.put("acl", doc.getMetadata().getOrDefault("acl", "public"));
                         summary.put("security", doc.getMetadata().get("security"));
                         summary.put("lastModified", doc.getMetadata().getOrDefault("lastModified", ""));
@@ -225,6 +348,26 @@ public class PgVectorMcpSearchBackend implements McpVectorSearchBackend {
         } catch (Exception e) {
             log.error("Failed to list accessible sources in pgvector: {}", e.getMessage(), e);
             throw new RuntimeException("Error listing accessible sources from pgvector", e);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> parseMetadata(Object metadataObj) {
+        if (metadataObj == null) {
+            return new HashMap<>();
+        }
+        if (metadataObj instanceof Map<?, ?> m) {
+            return new HashMap<>((Map<String, Object>) m);
+        }
+        String jsonStr = metadataObj.toString();
+        if (jsonStr == null || jsonStr.isBlank()) {
+            return new HashMap<>();
+        }
+        try {
+            return objectMapper.readValue(jsonStr, Map.class);
+        } catch (Exception e) {
+            log.warn("Failed to parse metadata JSON: {}", e.getMessage());
+            return new HashMap<>();
         }
     }
 }

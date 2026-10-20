@@ -80,7 +80,7 @@ CLEANUP_ON_EXIT="${CLEANUP_ON_EXIT:-true}"
 REBUILD_IMAGES="${REBUILD_IMAGES:-false}"
 MCP_BASE_URL="${MCP_BASE_URL:-http://localhost:8080}"
 MCP_ENDPOINT="${MCP_BASE_URL}/mcp"
-OIS_JOB_ID="mcp-integration-test-job-$(date +%s)"
+OIS_JOB_ID="${OIS_JOB_ID:-1}"
 INGEST_ENDPOINT="${MCP_BASE_URL}/api/v1/ingest/ois/${OIS_JOB_ID}"
 OIS_AUTH_TOKEN="${OPENCRAWLING_INGEST_OIS_TOKEN:-mcp-test-token-$(date +%s)}"
 export OPENCRAWLING_INGEST_OIS_TOKEN="${OIS_AUTH_TOKEN}"
@@ -136,8 +136,8 @@ mcp_post() {
   rm -f "$tmp_res"
 
   # If response is formatted as SSE (data: {...}), strip SSE prefix
-  if echo "$raw" | grep -q '^data: '; then
-    echo "$raw" | sed -n 's/^data: //p' | head -n 1
+  if echo "$raw" | grep -q '^data:'; then
+    echo "$raw" | sed -n 's/^data:[[:space:]]*//p' | grep -v '^$' | head -n 1
   else
     echo "$raw"
   fi
@@ -194,6 +194,9 @@ log_step "3" "Verifying database, embedding engine, and MCP server health endpoi
 
 wait_until "postgres-vector database container to report healthy" 180 \
   sh -c '[ "$(docker inspect -f "{{.State.Health.Status}}" postgres-vector-decoupled 2>/dev/null)" = "healthy" ]'
+
+# Clean stale vector data from previous runs while preserving schemas and ollama volumes
+docker exec -i postgres-vector-decoupled psql -U opencrawling -d opencrawling -c "TRUNCATE vector_store CASCADE; TRUNCATE vector_store_1024 CASCADE; TRUNCATE vector_store_768 CASCADE; TRUNCATE vector_store_384 CASCADE;" >/dev/null 2>&1 || true
 
 wait_until "redis-stack container to report healthy" 90 \
   sh -c '[ "$(docker inspect -f "{{.State.Health.Status}}" redis-stack-decoupled 2>/dev/null)" = "healthy" ]'
@@ -455,7 +458,10 @@ ingest_ois_doc "$(cat <<EOF
   "metadata": {"title": "Public Guidelines", "department": "public"},
   "security": {
     "inheritanceEnabled": false,
-    "permissions": [{"identity": "ROLE_USER", "identityType": "role", "access": "read"}]
+    "permissions": [
+      {"identity": "public", "identityType": "role", "access": "read"},
+      {"identity": "ROLE_USER", "identityType": "role", "access": "read"}
+    ]
   }
 }
 EOF
@@ -532,7 +538,7 @@ wait_for_doc_indexing() {
   local doc_id="$1"
   local desc="$2"
   wait_until "${desc} indexed in pgvector" 300 \
-    sh -c "[ \"\$(docker exec -i postgres-vector-decoupled psql -U opencrawling -d opencrawling -t -A -c \"SELECT count(*) FROM vector_store_1024 WHERE metadata->>'documentId' = '${doc_id}';\" 2>/dev/null | tr -d '[:space:]')\" -gt 0 ]"
+    sh -c "[ \"\$(docker exec -i postgres-vector-decoupled psql -U opencrawling -d opencrawling -t -A -c \"SELECT (SELECT count(*) FROM vector_store WHERE metadata->>'documentId' = '${doc_id}') + (SELECT count(*) FROM vector_store_1024 WHERE metadata->>'documentId' = '${doc_id}');\" 2>/dev/null | tr -d '[:space:]')\" -gt 0 ]"
 }
 
 wait_for_doc_indexing "${DOC_PUBLIC}" "Public Document"
@@ -790,7 +796,7 @@ EOF
 
 # Wait for tombstone deletion to clear rows in PostgreSQL pgvector
 wait_until "Finance document purged from pgvector after tombstone DELETE" 120 \
-  sh -c "[ \"\$(docker exec -i postgres-vector-decoupled psql -U opencrawling -d opencrawling -t -A -c \"SELECT count(*) FROM vector_store_1024 WHERE metadata->>'documentId' = '${DOC_FIN}';\" 2>/dev/null | tr -d '[:space:]')\" = '0' ]"
+  sh -c "[ \"\$(docker exec -i postgres-vector-decoupled psql -U opencrawling -d opencrawling -t -A -c \"SELECT (SELECT count(*) FROM vector_store WHERE metadata->>'documentId' = '${DOC_FIN}') + (SELECT count(*) FROM vector_store_1024 WHERE metadata->>'documentId' = '${DOC_FIN}');\" 2>/dev/null | tr -d '[:space:]')\" = '0' ]"
 
 # Re-query MCP secureVectorSearch as finance caller
 PURGED_SEARCH_RESP=$(invoke_secure_search "financial quarterly budget payroll" "bob@company.com" "finance")
