@@ -876,6 +876,12 @@ We provide fully automated end-to-end integration test scripts that build, boot,
     ```
     This script tests the telemetry ingestion pipeline, spinning up Jaeger, the OTel Collector, and Prometheus, executing a JUnit-based trace emitter, and verifying trace propagation using Jaeger's query API.
 
+*   **Secure Model Context Protocol (MCP) Server Decoupled Pipeline**:
+    ```bash
+    ./scripts/test-mcp-decoupled.sh
+    ```
+    This script tests the entire Secure MCP Server capabilities in decoupled deployment mode, validating Streamable HTTP transport handshakes (JSON-RPC 2.0 initialize, session negotiation, ping), tool discovery (`tools/list`), AIOps observability tools (`fetchJobTraces`, `getErrorLogs`, `queryThroughputMetrics`), Zero-Trust ACL evaluation (`secureVectorSearch`) with explicit deny precedence, document content retrieval (`getDocumentContent`), accessible sources cataloging (`listAccessibleSources`), multi-dimension querying, and OIS tombstone deletions.
+
 *   **OpenCrawling CLI (oc) Integration Test Suites**:
     ```bash
     # Local CLI Integration Suite

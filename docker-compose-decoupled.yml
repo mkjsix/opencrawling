@@ -336,6 +336,8 @@ services:
       - SPRING_KAFKA_BOOTSTRAP_SERVERS=kafka:9094
       - SPRING_AI_OLLAMA_BASE_URL=http://ollama:11434
       - SPRING_AI_OLLAMA_EMBEDDING_OPTIONS_MODEL=mxbai-embed-large
+      - SPRING_AI_MCP_SERVER_PROTOCOL=${SPRING_AI_MCP_SERVER_PROTOCOL:-STREAMABLE}
+      - SPRING_AI_MCP_SERVER_ANNOTATION_SCANNER_ENABLED=true
       - OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://otel-collector:4318/v1/traces
       - OPENCRAWLING_OBSERVABILITY_ENABLED=true
       - OPENCRAWLING_OBSERVABILITY_SAMPLING_PROBABILITY=1.0
@@ -357,6 +359,7 @@ services:
     depends_on:
       - postgres
       - redis
+      - ollama
     networks:
       opencrawling-network:
         aliases:

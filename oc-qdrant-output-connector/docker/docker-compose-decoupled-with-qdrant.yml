@@ -256,6 +256,9 @@ services:
       - SPRING_DATA_REDIS_HOST=redis
       - SPRING_DATA_REDIS_PASSWORD=redis_password
       - SPRING_KAFKA_BOOTSTRAP_SERVERS=kafka:9094
+      - SPRING_AI_OLLAMA_BASE_URL=http://ollama:11434
+      - SPRING_AI_MCP_SERVER_PROTOCOL=${SPRING_AI_MCP_SERVER_PROTOCOL:-STREAMABLE}
+      - SPRING_AI_MCP_SERVER_ANNOTATION_SCANNER_ENABLED=true
       - SPRING_OPENCRAWLING_OUTPUT_TYPE=qdrant
       - SPRING_OPENCRAWLING_OUTPUT_QDRANT_HOST=qdrant
       - SPRING_AUTOCONFIGURE_EXCLUDE=org.springframework.ai.autoconfigure.vectorstore.pgvector.PgVectorStoreAutoConfiguration
@@ -265,6 +268,8 @@ services:
       - opencrawling-reportsdata-qdrant:/data/reports
     depends_on:
       - redis
+      - ollama
+      - qdrant
     networks:
       opencrawling-network:
         aliases:

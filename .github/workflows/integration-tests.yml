@@ -59,6 +59,8 @@ jobs:
             script: "test-grpc-push-decoupled.sh"
           - name: "Observability Stack Test Suite"
             script: "test-observability.sh"
+          - name: "Secure MCP Server Decoupled Test Suite"
+            script: "test-mcp-decoupled.sh"
           - name: "Narrativization Pipeline Test Suite"
             script: "test-narrativization.sh"
           - name: "Apache Ozone Claim-Check GC Test Suite"

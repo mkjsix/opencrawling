@@ -604,12 +604,12 @@ HTTP_STATUS="000"
 ELAPSED=0
 MCP_TIMEOUT=60
 
-until [ "$HTTP_STATUS" == "200" ] || [ "$HTTP_STATUS" == "405" ] || [ "$HTTP_STATUS" == "404" ] || [ $ELAPSED -ge $MCP_TIMEOUT ]; do
+until [ "$HTTP_STATUS" == "200" ] || [ "$HTTP_STATUS" == "400" ] || [ "$HTTP_STATUS" == "405" ] || [ "$HTTP_STATUS" == "404" ] || [ $ELAPSED -ge $MCP_TIMEOUT ]; do
   HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "http://localhost:${MCP_PORT}/mcp" 2>/dev/null || echo "")
   if [ -z "$HTTP_STATUS" ] || [ "$HTTP_STATUS" == "000" ]; then
     HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "http://localhost:${MCP_PORT}/" 2>/dev/null || echo "000")
   fi
-  if [ "$HTTP_STATUS" != "200" ] && [ "$HTTP_STATUS" != "405" ] && [ "$HTTP_STATUS" != "404" ]; then
+  if [ "$HTTP_STATUS" != "200" ] && [ "$HTTP_STATUS" != "400" ] && [ "$HTTP_STATUS" != "405" ] && [ "$HTTP_STATUS" != "404" ]; then
     sleep 2
     ELAPSED=$((ELAPSED + 2))
   fi
@@ -617,7 +617,7 @@ done
 
 log_info "MCP Server HTTP response status: ${HTTP_STATUS}"
 
-if [ "$HTTP_STATUS" != "200" ] && [ "$HTTP_STATUS" != "405" ] && [ "$HTTP_STATUS" != "404" ]; then
+if [ "$HTTP_STATUS" != "200" ] && [ "$HTTP_STATUS" != "400" ] && [ "$HTTP_STATUS" != "405" ] && [ "$HTTP_STATUS" != "404" ]; then
   log_error "MCP Server readiness check failed: returned HTTP status ${HTTP_STATUS}."
   compose logs oc-mcp-server --tail 30 || true
   exit 1

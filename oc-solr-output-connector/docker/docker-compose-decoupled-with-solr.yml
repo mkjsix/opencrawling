@@ -258,6 +258,9 @@ services:
       - SPRING_DATA_REDIS_HOST=redis
       - SPRING_DATA_REDIS_PASSWORD=redis_password
       - SPRING_KAFKA_BOOTSTRAP_SERVERS=kafka:9094
+      - SPRING_AI_OLLAMA_BASE_URL=http://ollama:11434
+      - SPRING_AI_MCP_SERVER_PROTOCOL=${SPRING_AI_MCP_SERVER_PROTOCOL:-STREAMABLE}
+      - SPRING_AI_MCP_SERVER_ANNOTATION_SCANNER_ENABLED=true
       - SPRING_OPENCRAWLING_OUTPUT_TYPE=solr
       - SPRING_OPENCRAWLING_OUTPUT_SOLR_URL=http://solr:8983/solr
       - SPRING_AUTOCONFIGURE_EXCLUDE=org.springframework.ai.autoconfigure.vectorstore.pgvector.PgVectorStoreAutoConfiguration
@@ -267,6 +270,8 @@ services:
       - opencrawling-reportsdata-solr:/data/reports
     depends_on:
       - redis
+      - ollama
+      - solr
     networks:
       opencrawling-network:
         aliases:

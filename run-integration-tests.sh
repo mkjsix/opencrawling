@@ -104,11 +104,14 @@ ${BOLD}OPTIONS:${NC}
 ${BOLD}POSITIONAL ARGUMENTS:${NC}
   Any positional argument can be:
   1. A file path to a specific test script (e.g., ${CYAN}scripts/test-cli.sh${NC} or ${CYAN}test-alfresco-decoupled.sh${NC})
-  2. A filter keyword matching tests (e.g., ${CYAN}stormcrawler${NC}, ${CYAN}alfresco${NC}, ${CYAN}aps${NC}, ${CYAN}cmis${NC}, ${CYAN}seatunnel${NC}, ${CYAN}ozone${NC}, ${CYAN}migration${NC}, ${CYAN}reporting${NC}, ${CYAN}decoupled${NC}, ${CYAN}grpc${NC}, ${CYAN}grpc-push${NC})
+  2. A filter keyword matching tests (e.g., ${CYAN}stormcrawler${NC}, ${CYAN}alfresco${NC}, ${CYAN}aps${NC}, ${CYAN}cmis${NC}, ${CYAN}seatunnel${NC}, ${CYAN}ozone${NC}, ${CYAN}migration${NC}, ${CYAN}reporting${NC}, ${CYAN}decoupled${NC}, ${CYAN}mcp${NC}, ${CYAN}grpc${NC}, ${CYAN}grpc-push${NC})
 
 ${BOLD}EXAMPLES:${NC}
   ${DIM}# Run all integration tests${NC}
   ./run-integration-tests.sh
+
+  ${DIM}# Run only Model Context Protocol (MCP) server tests (matching *mcp*)${NC}
+  ./run-integration-tests.sh mcp
 
   ${DIM}# Run only Lakehouse Audit Reporting tests (matching *reporting*)${NC}
   ./run-integration-tests.sh reporting

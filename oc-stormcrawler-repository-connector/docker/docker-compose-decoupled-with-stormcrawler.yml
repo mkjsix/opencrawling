@@ -331,6 +331,9 @@ services:
       - SPRING_DATA_REDIS_HOST=redis
       - SPRING_DATA_REDIS_PASSWORD=redis_password
       - SPRING_KAFKA_BOOTSTRAP_SERVERS=kafka:9094
+      - SPRING_AI_OLLAMA_BASE_URL=http://ollama:11434
+      - SPRING_AI_MCP_SERVER_PROTOCOL=${SPRING_AI_MCP_SERVER_PROTOCOL:-STREAMABLE}
+      - SPRING_AI_MCP_SERVER_ANNOTATION_SCANNER_ENABLED=true
       - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres-vector:5432/opencrawling
       - SPRING_DATASOURCE_USERNAME=opencrawling
       - SPRING_DATASOURCE_PASSWORD=opencrawling_password
@@ -344,6 +347,8 @@ services:
       postgres-vector:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      ollama:
         condition: service_healthy
     networks:
       opencrawling-network:
