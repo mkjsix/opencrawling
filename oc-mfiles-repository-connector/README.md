@@ -312,16 +312,56 @@ class, time-window splitting, single- and multi-file documents, typed values, AC
 version modes, incremental runs, views, the VAF change feed, the three authentication types, token renewal, retries,
 logout and size-capped downloads. The runtime's connection check is covered by `ConnectorCheckerServiceTest`.
 
-### 2. Standalone connector test
+### 2. Standalone connector test, with the MFWS mock
 
 ```bash
 ./scripts/test-mfiles-repository-connector.sh
 ```
 
-The script probes an MFWS at `MFILES_URL` (unauthenticated `GET /server/status`) when one is reachable, and runs the test
-suite above.
+The script probes an MFWS at `MFILES_URL` (unauthenticated `GET /server/status`) when one is reachable, starts the
+**MFWS mock** ([`mfiles-mock/`](mfiles-mock/README.md), an M-Files Web Service emulator with a generated vault) on a
+local port when `python3` is available, and runs the test suite above plus `MFilesMockServerTest` against the mock
+over real HTTP: a full crawl reconciled with the mock's own counts, an incremental run after a file was removed, an
+object deleted and one added, the VAF change feed with resolved pseudo-users, injected 503s, a rejected token renewed
+mid-crawl, and the header and bearer logins. To run them against a mock you started yourself:
 
-### 3. Read-only live probe against an M-Files server
+```bash
+python3 oc-mfiles-repository-connector/mfiles-mock/mfws_mock.py &      # MFWS_PORT=8080 by default
+MFILES_MOCK_URL=http://localhost:8080 mvn test -pl oc-mfiles-repository-connector -Dtest=MFilesMockServerTest
+```
+
+### 3. Decoupled pipeline test
+
+```bash
+./scripts/test-mfiles-decoupled.sh                 # KEEP_CONTAINERS=true keeps the stack, SKIP_BUILD=true reuses images
+```
+
+[`docker/docker-compose-decoupled-with-mfiles.yml`](docker/docker-compose-decoupled-with-mfiles.yml) runs the MFWS mock
+with Kafka, Redis, pgvector, Ollama and the decoupled OpenCrawling services. The script crawls the mock's vault and
+checks pgvector against the mock's ground truth: every live file indexed exactly once, single- and multi-file documents
+by their reference codes, the `mfiles.parentId` lineage, typed properties, permission rules (an allow, a deny and a
+named-ACL restriction), and no deleted object. It then checks MCP secure search over streamable HTTP (a group member
+finds a document, a denied user and an outsider don't), changes the vault (a file removed, a document deleted,
+one added) and verifies that an incremental crawl brings pgvector up to date.
+
+#### Running the same stack against a real M-Files server
+
+The crawler reads the MFWS mock by default. Point it at a real server through the environment, start the
+infrastructure, and run the crawler once, capped for a first test:
+
+```bash
+export MFILES_URL=https://<server>/REST MFILES_VAULT_GUID='{<vault-guid>}' MFILES_USERNAME=<user> MFILES_PASSWORD=<password>
+export MFILES_MAX_DOCUMENTS=25            # optional: MFILES_DOMAIN, MFILES_CLASS_IDS, MFILES_OBJECT_TYPE (default -1 = all),
+                                         # MFILES_FALLBACK_PRINCIPALS, MFILES_CRAWL_MODE, MFILES_VAF_BASE_PATH
+COMPOSE="docker compose -f oc-mfiles-repository-connector/docker/docker-compose-decoupled-with-mfiles.yml"
+$COMPOSE up -d postgres-vector redis ollama ollama-model-puller kafka \
+  oc-ingestion-consumer oc-embedding-consumer oc-writer-consumer oc-mcp-server
+$COMPOSE up oc-crawler                   # crawls, logs the scan summary, exits 0 on success
+```
+
+`scripts/test-mfiles-decoupled.sh` itself always uses the mock: its checks compare against the mock's ground truth.
+
+### 4. Read-only live probe against an M-Files server
 
 `MFilesLiveProbeTest` runs only when `MFILES_LIVE_PROBE=1` is set and never writes to the vault. It records the payloads
 the public MFWS reference leaves open (authentication, a `p21>=` search, and each object's permissions payload with the
@@ -364,8 +404,8 @@ previous one downstream instead of leaving it indexed.
   crawl; it records exactly the payloads that still need confirming.
 - **Permissions over MFWS** come from an undocumented resource and are mapped fail-closed. Pseudo-users (metadata-driven
   permissions) can't be resolved over MFWS: use the vaf mode, `fallback-principals`, or both.
-- **No decoupled pipeline test script.** M-Files is a licensed product without a public container image, so there is no
-  throwaway vault to start in `docker compose`.
+- **The pipeline tests run against the MFWS mock**, not a real M-Files Server, which has no container image. The mock
+  follows the MFWS reference, but the permissions payload is the connector's assumption (see the live probe above).
 - **Objects that leave the crawl scope** (for example a class change outside `class-ids`) are not detected by incremental
   runs; a full crawl into a clean index picks them up. Destroyed objects (removed rather than deleted) are not listed by
   MFWS and are not detected either.

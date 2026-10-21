@@ -22,9 +22,12 @@
 #   Probes an M-Files Web Service (MFWS) when one is reachable (unauthenticated
 #   GET /server/status, read-only) and runs the Maven test suite of
 #   oc-mfiles-repository-connector (MockWebServer with MFWS response fixtures).
-#   M-Files is a licensed product: this script never starts one and never
-#   writes to one. For a read-only check against a real vault, see
-#   'Read-only live probe' in oc-mfiles-repository-connector/README.md.
+#   M-Files is a licensed product: this script never writes to a real server.
+#   When python3 is available it also starts the MFWS mock (an M-Files Web
+#   Service emulator, oc-mfiles-repository-connector/mfiles-mock) on a local
+#   port and runs the scenario tests against it over real HTTP. For a read-only
+#   check against a real vault, see 'Read-only live probe' in
+#   oc-mfiles-repository-connector/README.md.
 # ==============================================================================
 
 set -euo pipefail
@@ -32,6 +35,8 @@ set -euo pipefail
 # Configuration
 MFILES_URL="${MFILES_URL:-http://localhost/REST}"
 TIMEOUT="${TIMEOUT:-10}"
+MOCK_PORT="${MOCK_PORT:-18089}"
+MOCK_PID=""
 
 # Terminal Formatting
 RED='\033[0;31m'
@@ -69,7 +74,37 @@ else
   log_info "Will execute the isolated embedded mock HTTP server test suite."
 fi
 
-# 3. Run Maven Test Suite
+# 3. Start the MFWS mock (only this script's own process is stopped afterwards)
+stop_mock() {
+  if [ -n "${MOCK_PID}" ] && kill -0 "${MOCK_PID}" 2>/dev/null; then
+    kill "${MOCK_PID}" 2>/dev/null || true
+    log_info "MFWS mock (pid ${MOCK_PID}) stopped."
+  fi
+}
+trap stop_mock EXIT
+
+if command -v python3 >/dev/null 2>&1; then
+  log_info "Starting the MFWS mock on port ${MOCK_PORT}..."
+  mkdir -p oc-mfiles-repository-connector/target
+  MFWS_PORT="${MOCK_PORT}" MFWS_QUIET=true MFWS_BEARER_TOKENS=tok-oauth \
+    python3 oc-mfiles-repository-connector/mfiles-mock/mfws_mock.py > oc-mfiles-repository-connector/target/mfws-mock.log 2>&1 &
+  MOCK_PID=$!
+  for _ in $(seq 1 40); do
+    curl -s -o /dev/null "http://localhost:${MOCK_PORT}/REST/server/status" && break
+    sleep 0.25
+  done
+  if curl -s -o /dev/null "http://localhost:${MOCK_PORT}/REST/server/status"; then
+    log_success "MFWS mock is up (pid ${MOCK_PID}); the scenario tests run against it."
+    export MFILES_MOCK_URL="http://localhost:${MOCK_PORT}"
+  else
+    log_warn "The MFWS mock did not start (see oc-mfiles-repository-connector/target/mfws-mock.log); the scenario tests are skipped."
+    stop_mock
+  fi
+else
+  log_warn "python3 not found: the MFWS mock scenario tests are skipped."
+fi
+
+# 4. Run Maven Test Suite
 log_info "Executing Maven test suite for oc-mfiles-repository-connector..."
 mvn test -pl oc-mfiles-repository-connector -am
 
