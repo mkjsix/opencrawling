@@ -85,7 +85,7 @@ public final class McpAclEvaluator {
      */
     public static boolean isAccessible(String acl, Collection<String> allowedRead, Collection<String> deniedRead,
                                         String userPrincipal, Collection<String> userRoles) {
-        List<String> acls = (acl == null || acl.isBlank()) ? Collections.emptyList() : List.of(acl.trim());
+        List<String> acls = extractStringList(acl);
         return isAccessible(acls, allowedRead, deniedRead, userPrincipal, userRoles);
     }
 
@@ -123,7 +123,7 @@ public final class McpAclEvaluator {
             if (matches) {
                 if ("deny".equalsIgnoreCase(rule.access())) {
                     return false; // Explicit deny overrides everything
-                } else if ("read".equalsIgnoreCase(rule.access()) || "write".equalsIgnoreCase(rule.access())) {
+                } else if ("read".equalsIgnoreCase(rule.access()) || "write".equalsIgnoreCase(rule.access()) || "admin".equalsIgnoreCase(rule.access())) {
                     hasReadAccess = true;
                 }
             }
@@ -150,7 +150,7 @@ public final class McpAclEvaluator {
                 if (matches) {
                     if ("deny".equalsIgnoreCase(access)) {
                         return false;
-                    } else if ("read".equalsIgnoreCase(access) || "write".equalsIgnoreCase(access)) {
+                    } else if ("read".equalsIgnoreCase(access) || "write".equalsIgnoreCase(access) || "admin".equalsIgnoreCase(access)) {
                         hasReadAccess = true;
                     }
                 }
@@ -200,14 +200,41 @@ public final class McpAclEvaluator {
         if (obj instanceof Collection<?> col) {
             List<String> list = new ArrayList<>();
             for (Object item : col) {
-                if (item != null) list.add(String.valueOf(item));
+                if (item != null) {
+                    addSplitTokens(String.valueOf(item), list);
+                }
             }
             return list;
         } else if (obj instanceof String[] arr) {
-            return Arrays.asList(arr);
+            List<String> list = new ArrayList<>();
+            for (String item : arr) {
+                if (item != null) {
+                    addSplitTokens(item, list);
+                }
+            }
+            return list;
         } else if (obj instanceof String s && !s.isBlank()) {
-            return List.of(s.trim());
+            List<String> list = new ArrayList<>();
+            addSplitTokens(s, list);
+            return list;
         }
         return Collections.emptyList();
+    }
+
+    private static void addSplitTokens(String raw, List<String> target) {
+        if (raw == null || raw.isBlank()) return;
+        if (raw.contains(",")) {
+            for (String part : raw.split(",")) {
+                String trimmed = part.trim();
+                if (!trimmed.isEmpty()) {
+                    target.add(trimmed);
+                }
+            }
+        } else {
+            String trimmed = raw.trim();
+            if (!trimmed.isEmpty()) {
+                target.add(trimmed);
+            }
+        }
     }
 }

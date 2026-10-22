@@ -160,14 +160,27 @@ public class VectorOutputConnector implements OutputConnector {
                 boolean inheritanceEnabled = false;
 
                 if (document.security() != null) {
+                    metadata.put("security", document.security());
                     inheritanceEnabled = document.security().inheritanceEnabled();
                     if (document.security().permissions() != null) {
                         for (PermissionRule rule : document.security().permissions()) {
-                            if ("read".equalsIgnoreCase(rule.access()) || "write".equalsIgnoreCase(rule.access()) || "admin".equalsIgnoreCase(rule.access())) {
-                                allowedRead.add(rule.identity());
-                            } else if ("deny".equalsIgnoreCase(rule.access())) {
-                                deniedRead.add(rule.identity());
+                            if (rule != null && rule.identity() != null && !rule.identity().isBlank()) {
+                                String id = rule.identity().trim();
+                                if ("read".equalsIgnoreCase(rule.access()) || "write".equalsIgnoreCase(rule.access()) || "admin".equalsIgnoreCase(rule.access())) {
+                                    if (!allowedRead.contains(id)) allowedRead.add(id);
+                                } else if ("deny".equalsIgnoreCase(rule.access())) {
+                                    if (!deniedRead.contains(id)) deniedRead.add(id);
+                                }
                             }
+                        }
+                    }
+                }
+
+                if (document.acl() != null && !document.acl().isBlank() && !"read".equalsIgnoreCase(document.acl().trim())) {
+                    for (String token : document.acl().split(",")) {
+                        String trimmed = token.trim();
+                        if (!trimmed.isEmpty() && !allowedRead.contains(trimmed)) {
+                            allowedRead.add(trimmed);
                         }
                     }
                 }

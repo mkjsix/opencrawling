@@ -119,19 +119,7 @@ public class PgVectorMcpSearchBackend implements McpVectorSearchBackend {
         double threshold = minScore >= 0.0 ? minScore : 0.0;
 
         FilterExpressionBuilder b = new FilterExpressionBuilder();
-        var securityExpression = b.eq("acl", "public");
-
-        if (userPrincipal != null && !userPrincipal.trim().isBlank()) {
-            securityExpression = b.or(securityExpression, b.eq("acl", userPrincipal.trim()));
-        }
-
-        if (userRoles != null && !userRoles.isEmpty()) {
-            for (String role : userRoles) {
-                if (role != null && !role.isBlank()) {
-                    securityExpression = b.or(securityExpression, b.eq("acl", role.trim()));
-                }
-            }
-        }
+        var securityExpression = buildSecurityFilterExpression(b, userPrincipal, userRoles);
 
         SearchRequest searchRequest = SearchRequest.builder()
                 .query(query)
@@ -173,7 +161,7 @@ public class PgVectorMcpSearchBackend implements McpVectorSearchBackend {
                                 uri,
                                 doc.getText(),
                                 doc.getMetadata(),
-                                (String) doc.getMetadata().getOrDefault("acl", "public"),
+                                formatAcl(doc.getMetadata().getOrDefault("acl", "public")),
                                 doc.getScore() != null ? doc.getScore() : 0.0
                         );
                     })
@@ -211,7 +199,7 @@ public class PgVectorMcpSearchBackend implements McpVectorSearchBackend {
                             Map<String, Object> meta = parseMetadata(rs.getObject("metadata"));
                             String docId = (String) meta.getOrDefault("documentId", meta.getOrDefault("parent_document_id", ""));
                             String uri = (docId != null && !docId.isBlank()) ? docId : (String) meta.getOrDefault("uri", id);
-                            String acl = (String) meta.getOrDefault("acl", "public");
+                            String acl = formatAcl(meta.getOrDefault("acl", "public"));
                             return new McpVectorServer.DocumentDetailsResult(id, uri, content, meta, acl);
                         },
                         documentUri, documentUri, documentUri
@@ -231,17 +219,7 @@ public class PgVectorMcpSearchBackend implements McpVectorSearchBackend {
 
         // Fallback for mock environments without active JDBC connection
         FilterExpressionBuilder b = new FilterExpressionBuilder();
-        var securityExpression = b.eq("acl", "public");
-        if (userPrincipal != null && !userPrincipal.trim().isBlank()) {
-            securityExpression = b.or(securityExpression, b.eq("acl", userPrincipal.trim()));
-        }
-        if (userRoles != null && !userRoles.isEmpty()) {
-            for (String role : userRoles) {
-                if (role != null && !role.isBlank()) {
-                    securityExpression = b.or(securityExpression, b.eq("acl", role.trim()));
-                }
-            }
-        }
+        var securityExpression = buildSecurityFilterExpression(b, userPrincipal, userRoles);
 
         var finalExpression = b.and(b.eq("uri", documentUri), securityExpression).build();
         SearchRequest searchRequest = SearchRequest.builder()
@@ -263,7 +241,7 @@ public class PgVectorMcpSearchBackend implements McpVectorSearchBackend {
                                 uri,
                                 doc.getText(),
                                 doc.getMetadata(),
-                                (String) doc.getMetadata().getOrDefault("acl", "public")
+                                formatAcl(doc.getMetadata().getOrDefault("acl", "public"))
                         );
                     })
                     .orElseThrow(() -> new NoSuchElementException("Document not found or access denied."));
@@ -273,6 +251,38 @@ public class PgVectorMcpSearchBackend implements McpVectorSearchBackend {
             log.error("Failed to retrieve document details in pgvector: {}", e.getMessage(), e);
             throw new RuntimeException("Error retrieving document details from pgvector", e);
         }
+    }
+
+    private FilterExpressionBuilder.Op buildSecurityFilterExpression(
+            FilterExpressionBuilder b,
+            String userPrincipal,
+            List<String> userRoles
+    ) {
+        var securityExpression = b.or(b.eq("acl", "public"), b.eq("security_allowed_read", "public"));
+
+        if (userPrincipal != null && !userPrincipal.trim().isBlank()) {
+            String principal = userPrincipal.trim();
+            securityExpression = b.or(securityExpression, b.or(b.eq("acl", principal), b.eq("security_allowed_read", principal)));
+        }
+
+        if (userRoles != null && !userRoles.isEmpty()) {
+            for (String role : userRoles) {
+                if (role != null && !role.isBlank()) {
+                    String r = role.trim();
+                    securityExpression = b.or(securityExpression, b.or(b.eq("acl", r), b.eq("security_allowed_read", r)));
+                }
+            }
+        }
+
+        return securityExpression;
+    }
+
+    private String formatAcl(Object aclObj) {
+        if (aclObj == null) return "public";
+        if (aclObj instanceof Collection<?> col) {
+            return String.join(",", col.stream().map(String::valueOf).toList());
+        }
+        return String.valueOf(aclObj);
     }
 
     @Override

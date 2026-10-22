@@ -95,6 +95,36 @@ class IngestionConsumerTest {
         }
     }
 
+    @Test
+    void chunksCarrySecurityAllowedAndDeniedRead() {
+        org.opencrawling.core.security.SecurityConfig sec = new org.opencrawling.core.security.SecurityConfig(false, List.of(
+                new org.opencrawling.core.security.PermissionRule("engineering", "group", "engineering", "read"),
+                new org.opencrawling.core.security.PermissionRule("finance", "group", "finance", "write"),
+                new org.opencrawling.core.security.PermissionRule("contractor", "group", "contractor", "deny")
+        ));
+        IngestionMessage msg = new IngestionMessage(
+                "http://example.com/multi.html",
+                "file:///claims/doc",
+                Map.of(),
+                "engineering,finance",
+                sec,
+                "2026-01-01T00:00:00Z",
+                null,
+                null,
+                Map.of()
+        );
+
+        clearInvocations(kafkaTemplate);
+        consumer.consume(msg);
+
+        ArgumentCaptor<Object> sent = ArgumentCaptor.forClass(Object.class);
+        verify(kafkaTemplate, atLeastOnce()).send(eq(KafkaConfig.CHUNKS_TOPIC_NAME), anyString(), sent.capture());
+        DocumentChunkMessage chunk = (DocumentChunkMessage) sent.getAllValues().get(0);
+
+        assertEquals(List.of("engineering", "finance"), chunk.metadata().get("security_allowed_read"));
+        assertEquals(List.of("contractor"), chunk.metadata().get("security_denied_read"));
+    }
+
     /** Consumes one UPSERT message for {@code documentId} and returns the chunk ids it published, in order. */
     private List<String> ingest(String documentId) {
         return publishedChunks(documentId).stream().map(DocumentChunkMessage::chunkId).toList();
