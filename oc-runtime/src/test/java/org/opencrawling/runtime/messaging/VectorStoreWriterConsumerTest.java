@@ -77,6 +77,28 @@ class VectorStoreWriterConsumerTest {
     }
 
     @Test
+    void testConsumePopulatesSecurityAllowedReadWhenMissing() {
+        float[] vector1024 = new float[1024];
+        DocumentEmbeddedMessage message = new DocumentEmbeddedMessage(
+                "doc-multi",
+                "chunk-multi-0",
+                "Text content",
+                Map.of("acl", "mfiles:user:12,mfiles:group:5"),
+                vector1024
+        );
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<Document>> captor = ArgumentCaptor.forClass(List.class);
+        doNothing().when(store1024).add(captor.capture());
+
+        consumer.consume(message);
+
+        List<Document> saved = captor.getValue();
+        assertEquals(1, saved.size());
+        assertEquals(List.of("mfiles:user:12", "mfiles:group:5"), saved.get(0).getMetadata().get("security_allowed_read"));
+    }
+
+    @Test
     void testConsumeDeleteTombstonePurgesTheDocumentChunksFromAllVectorStores() {
         String documentId = "http://example.com/gone.html";
         DocumentEmbeddedMessage tombstone = new DocumentEmbeddedMessage(

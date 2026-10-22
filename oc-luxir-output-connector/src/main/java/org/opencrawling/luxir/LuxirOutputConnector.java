@@ -43,6 +43,28 @@ public class LuxirOutputConnector implements OutputConnector {
     private static final Logger log = LoggerFactory.getLogger(LuxirOutputConnector.class);
     private static final String NUL_CHAR = Character.toString(0);
 
+    private static final Set<String> RESERVED_KEYS = Set.of(
+            "title",
+            "uri",
+            "acl",
+            "lastModified",
+            "security",
+            "security_inheritance",
+            "security_allowed_read",
+            "security_denied_read",
+            LuxirConstants.FIELD_ID,
+            LuxirConstants.FIELD_DOC_ID,
+            LuxirConstants.FIELD_TEXT,
+            LuxirConstants.FIELD_TITLE,
+            LuxirConstants.FIELD_URI,
+            LuxirConstants.FIELD_SOURCE,
+            LuxirConstants.FIELD_LAST_MODIFIED,
+            LuxirConstants.FIELD_ACL,
+            LuxirConstants.FIELD_SECURITY_INHERITANCE,
+            LuxirConstants.FIELD_SECURITY_ALLOWED_READ,
+            LuxirConstants.FIELD_SECURITY_DENIED_READ
+    );
+
     private final LuxirClient luxirClient;
     private final LuxirOutputProperties properties;
     private final EmbeddingModel embeddingModel;
@@ -163,8 +185,15 @@ public class LuxirOutputConnector implements OutputConnector {
 
                     // Add other metadata attributes
                     metadata.forEach((key, val) -> {
-                        if (!"title".equals(key) && !LuxirConstants.FIELD_ID.equals(key) && !LuxirConstants.FIELD_TEXT.equals(key)) {
-                            String targetKey = key.endsWith("_s") || key.endsWith("_t") || key.endsWith("_ss") ? key : key + "_s";
+                        if (!RESERVED_KEYS.contains(key) && !key.equals(properties.vectorField())) {
+                            String targetKey;
+                            if (key.endsWith("_s") || key.endsWith("_t") || key.endsWith("_ss")) {
+                                targetKey = key;
+                            } else if (val instanceof Collection<?> || (val != null && val.getClass().isArray())) {
+                                targetKey = key + "_ss";
+                            } else {
+                                targetKey = key + "_s";
+                            }
                             doc.put(targetKey, val);
                         }
                     });

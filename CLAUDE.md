@@ -133,7 +133,7 @@ The runtime's topic names are constants in `oc-runtime/.../config/KafkaConfig.ja
 ### MCP server
 
 `McpVectorServer` uses Spring AI MCP with the `STREAMABLE_HTTP` transport on the runtime port and exposes three `@McpTool` methods:
-- **`secureVectorSearch`** runs a similarity search filtered on the flat `acl` metadata field, then re-checks each hit against `SecurityConfig`.
+- **`secureVectorSearch`** runs a similarity search pre-filtered on `security_allowed_read` and `acl` metadata fields, then authoritatively re-checks each hit against `SecurityConfig` via `McpAclEvaluator`.
 - **`getDocumentContent`** returns a document's chunks by URI, behind the same ACL guard.
 - **`listAccessibleSources`** lists the indexed URIs that a principal and its groups can see.
 
@@ -141,14 +141,14 @@ When the output type is `vespa`, `VespaMcpVectorServer` replaces it.
 
 ### Security / ACL model
 
-- **Where it lives:** `SecurityConfig` is stored as a JSON map in `metadata["security"]`.
+- **Where it lives:** `SecurityConfig` is stored as a JSON map in `metadata["security"]`, and flattened into `security_allowed_read` and `security_denied_read` lists for vector-store pre-filtering.
 - **Rules:** it holds `PermissionRule` records with these fields:
   - `identity`
   - `identityType` (`USER`, `GROUP` or `TENANT`)
   - `displayName`
   - `access` (`read`, `write` or `deny`)
 - **Precedence:** an explicit `deny` always wins.
-- **Legacy field:** the flat `acl` string is what vector-store filter expressions use. Connectors must populate both it and `SecurityConfig`.
+- **Legacy field:** the flat `acl` string is also supported alongside `security_allowed_read` in vector-store filter expressions. Connectors must populate `SecurityConfig` (and optionally `acl`).
 
 ### pgvector routing
 

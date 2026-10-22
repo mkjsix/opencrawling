@@ -26,12 +26,15 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.opencrawling.runtime.config.KafkaConfig;
 import org.opencrawling.core.document.DocumentAction;
 import org.opencrawling.core.messaging.DocumentEmbeddedMessage;
+import org.opencrawling.core.security.PermissionRule;
+import org.opencrawling.core.security.SecurityConfig;
 import org.opencrawling.runtime.observability.TelemetryTraceStore;
 import org.opencrawling.vector.config.PrecomputedEmbeddingModel;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -94,6 +97,7 @@ public class VectorStoreWriterConsumer {
                 return;
             }
             Map<String, Object> metadata = new HashMap<>(message.metadata());
+            ensureSecurityMetadata(metadata);
             // Put the precomputed embedding into the metadata so PrecomputedEmbeddingModel can extract it
             metadata.put("embedding", message.embedding());
             
@@ -141,5 +145,74 @@ public class VectorStoreWriterConsumer {
                 traceStore.recordError(jobId, "ERROR", "VectorStoreWriterConsumer", "Failed to store embedded chunk: " + message.chunkId() + " - " + e.getMessage(), e.toString());
             }
         }
+    }
+
+    private void ensureSecurityMetadata(Map<String, Object> metadata) {
+        if (metadata.containsKey("security_allowed_read")) {
+            return;
+        }
+
+        List<String> allowedRead = new ArrayList<>();
+        List<String> deniedRead = new ArrayList<>();
+        boolean inheritanceEnabled = false;
+
+        Object secObj = metadata.get("security");
+        Object aclObj = metadata.get("acl");
+        String aclStr = aclObj != null ? String.valueOf(aclObj).trim() : "";
+        boolean hasRestrictiveAcl = !aclStr.isBlank() && !"public".equalsIgnoreCase(aclStr) && !"read".equalsIgnoreCase(aclStr);
+
+        if (secObj instanceof SecurityConfig sc) {
+            inheritanceEnabled = sc.inheritanceEnabled();
+            boolean isDefaultPublic = SecurityConfig.createPublic().equals(sc);
+            if (sc.permissions() != null && !(isDefaultPublic && hasRestrictiveAcl)) {
+                for (PermissionRule rule : sc.permissions()) {
+                    if (rule != null && rule.identity() != null && !rule.identity().isBlank()) {
+                        String id = rule.identity().trim();
+                        if ("read".equalsIgnoreCase(rule.access()) || "write".equalsIgnoreCase(rule.access()) || "admin".equalsIgnoreCase(rule.access())) {
+                            if (!allowedRead.contains(id)) allowedRead.add(id);
+                        } else if ("deny".equalsIgnoreCase(rule.access())) {
+                            if (!deniedRead.contains(id)) deniedRead.add(id);
+                        }
+                    }
+                }
+            }
+        } else if (secObj instanceof Map<?, ?> sm) {
+            if (sm.containsKey("inheritanceEnabled")) {
+                inheritanceEnabled = Boolean.TRUE.equals(sm.get("inheritanceEnabled"));
+            }
+            Object perms = sm.get("permissions");
+            if (perms instanceof List<?> permsList) {
+                for (Object p : permsList) {
+                    if (p instanceof Map<?, ?> pm) {
+                        String id = pm.get("identity") != null ? String.valueOf(pm.get("identity")).trim() : "";
+                        String acc = pm.get("access") != null ? String.valueOf(pm.get("access")).trim() : "";
+                        if (!id.isEmpty()) {
+                            if ("read".equalsIgnoreCase(acc) || "write".equalsIgnoreCase(acc) || "admin".equalsIgnoreCase(acc)) {
+                                if (!allowedRead.contains(id)) allowedRead.add(id);
+                            } else if ("deny".equalsIgnoreCase(acc)) {
+                                if (!deniedRead.contains(id)) deniedRead.add(id);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if (!aclStr.isBlank() && !"read".equalsIgnoreCase(aclStr)) {
+            for (String token : aclStr.split(",")) {
+                String trimmed = token.trim();
+                if (!trimmed.isEmpty() && !allowedRead.contains(trimmed)) {
+                    allowedRead.add(trimmed);
+                }
+            }
+        }
+
+        if (allowedRead.isEmpty() && deniedRead.isEmpty()) {
+            allowedRead.add("public");
+        }
+
+        metadata.put("security_inheritance", inheritanceEnabled);
+        metadata.put("security_allowed_read", allowedRead);
+        metadata.put("security_denied_read", deniedRead);
     }
 }

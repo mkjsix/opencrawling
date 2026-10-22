@@ -28,7 +28,9 @@ import java.util.*;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
+import org.mockito.ArgumentCaptor;
 
 class PgVectorMcpSearchBackendTest {
 
@@ -100,5 +102,59 @@ class PgVectorMcpSearchBackendTest {
         List<Map<String, Object>> sources = backend.listAccessibleSources("john", List.of(), null);
         assertThat(sources).hasSize(1);
         assertThat(sources.get(0).get("uri")).isEqualTo("file:///public.txt");
+    }
+
+    @Test
+    void testSecureVectorSearch_multiReaderDocumentFoundForEveryReader() {
+        when(embeddingModel.embed("budget plan")).thenReturn(new float[]{0.1f, 0.2f});
+
+        Document multiReaderDoc = new Document("doc-123", "Shared budget plan for engineering and finance.", Map.of(
+                "uri", "http://repro.example/two-readers.html",
+                "acl", "engineering,finance",
+                "security_allowed_read", List.of("engineering", "finance")
+        ));
+        when(vectorStore.similaritySearch(any(SearchRequest.class))).thenReturn(List.of(multiReaderDoc));
+
+        // 1. Engineering caller finds the document
+        List<McpVectorServer.DocumentSearchResult> engResults = backend.secureVectorSearch(
+                "budget plan", "alice@enterprise.com", List.of("engineering"), 5, 0.0, null
+        );
+        assertThat(engResults).hasSize(1);
+        assertThat(engResults.get(0).id()).isEqualTo("doc-123");
+
+        // 2. Finance caller ALSO finds the document (issue #163 fix)
+        List<McpVectorServer.DocumentSearchResult> finResults = backend.secureVectorSearch(
+                "budget plan", "bob@enterprise.com", List.of("finance"), 5, 0.0, null
+        );
+        assertThat(finResults).hasSize(1);
+        assertThat(finResults.get(0).id()).isEqualTo("doc-123");
+
+        // 3. HR caller does NOT get the document
+        List<McpVectorServer.DocumentSearchResult> hrResults = backend.secureVectorSearch(
+                "budget plan", "carol@enterprise.com", List.of("hr"), 5, 0.0, null
+        );
+        assertThat(hrResults).isEmpty();
+    }
+
+    @Test
+    void testSecureVectorSearch_filterExpressionIncludesSecurityAllowedReadAndAcl() {
+        when(embeddingModel.embed(anyString())).thenReturn(new float[]{0.1f});
+        when(vectorStore.similaritySearch(any(SearchRequest.class))).thenReturn(List.of());
+
+        backend.secureVectorSearch("query", "user1", List.of("finance", "engineering"), 5, 0.0, null);
+
+        ArgumentCaptor<SearchRequest> captor = ArgumentCaptor.forClass(SearchRequest.class);
+        verify(vectorStore).similaritySearch(captor.capture());
+
+        SearchRequest req = captor.getValue();
+        assertThat(req.getTopK()).isEqualTo(5);
+        assertThat(req.getFilterExpression()).isNotNull();
+        String exprStr = req.getFilterExpression().toString();
+        assertThat(exprStr).contains("security_allowed_read");
+        assertThat(exprStr).contains("acl");
+        assertThat(exprStr).contains("finance");
+        assertThat(exprStr).contains("engineering");
+        assertThat(exprStr).contains("user1");
+        assertThat(exprStr).contains("public");
     }
 }

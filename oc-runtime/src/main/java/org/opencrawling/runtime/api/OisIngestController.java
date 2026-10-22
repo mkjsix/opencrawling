@@ -243,17 +243,19 @@ public class OisIngestController {
     }
 
     /**
-     * The flat {@code acl} value the MCP pre-filter matches: the first identity with read or write access.
-     * A document readable by several identities is pre-filtered on the first one only; the MCP post-check
-     * reads the full {@code security} permissions.
+     * The flat {@code acl} value derived from {@code security}: all identities with read, write, or admin access
+     * joined by comma (or {@code ""} when none).
      */
     private static String readAcl(SecurityConfig security) {
-        List<PermissionRule> rules = security.permissions() != null ? security.permissions() : List.of();
-        return rules.stream()
-                .filter(rule -> "read".equalsIgnoreCase(rule.access()) || "write".equalsIgnoreCase(rule.access()))
+        List<PermissionRule> rules = (security != null && security.permissions() != null) ? security.permissions() : List.of();
+        List<String> readers = rules.stream()
+                .filter(rule -> "read".equalsIgnoreCase(rule.access()) || "write".equalsIgnoreCase(rule.access()) || "admin".equalsIgnoreCase(rule.access()))
                 .map(PermissionRule::identity)
-                .findFirst()
-                .orElse("");
+                .filter(id -> id != null && !id.isBlank())
+                .map(String::trim)
+                .distinct()
+                .toList();
+        return String.join(",", readers);
     }
 
     /** The fields of an OIS document this endpoint reads; any other field is ignored. */

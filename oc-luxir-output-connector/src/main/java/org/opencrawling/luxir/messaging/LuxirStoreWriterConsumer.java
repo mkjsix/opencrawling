@@ -39,6 +39,36 @@ public class LuxirStoreWriterConsumer {
 
     private static final Logger log = LoggerFactory.getLogger(LuxirStoreWriterConsumer.class);
 
+    private static final Set<String> RESERVED_KEYS = Set.of(
+            "id",
+            "doc_id",
+            "documentId",
+            "chunkId",
+            "chunk_index",
+            "total_chunks",
+            "text",
+            "uri",
+            "acl",
+            "title",
+            "source",
+            "lastModified",
+            "security",
+            "security_inheritance",
+            "security_allowed_read",
+            "security_denied_read",
+            "embedding",
+            LuxirConstants.FIELD_DOC_ID,
+            LuxirConstants.FIELD_TEXT,
+            LuxirConstants.FIELD_TITLE,
+            LuxirConstants.FIELD_URI,
+            LuxirConstants.FIELD_SOURCE,
+            LuxirConstants.FIELD_LAST_MODIFIED,
+            LuxirConstants.FIELD_ACL,
+            LuxirConstants.FIELD_SECURITY_INHERITANCE,
+            LuxirConstants.FIELD_SECURITY_ALLOWED_READ,
+            LuxirConstants.FIELD_SECURITY_DENIED_READ
+    );
+
     private final LuxirClient luxirClient;
 
     @Value("${spring.opencrawling.output.luxir.collection:opencrawling}")
@@ -83,32 +113,74 @@ public class LuxirStoreWriterConsumer {
             List<String> deniedRead = new ArrayList<>();
             boolean inheritanceEnabled = true;
 
-            Object securityObj = message.metadata().get("security");
-            if (securityObj instanceof Map<?, ?> securityMap) {
-                if (securityMap.containsKey("inheritanceEnabled")) {
-                    inheritanceEnabled = Boolean.TRUE.equals(securityMap.get("inheritanceEnabled"));
+            Object allowedMeta = message.metadata().get("security_allowed_read");
+            if (allowedMeta == null) {
+                allowedMeta = message.metadata().get(LuxirConstants.FIELD_SECURITY_ALLOWED_READ);
+            }
+            if (allowedMeta instanceof Collection<?> col) {
+                for (Object o : col) {
+                    if (o != null && !String.valueOf(o).isBlank()) {
+                        String id = String.valueOf(o).trim();
+                        if (!allowedRead.contains(id)) allowedRead.add(id);
+                    }
                 }
-                Object permsObj = securityMap.get("permissions");
-                if (permsObj instanceof List<?> permsList) {
-                    for (Object permObj : permsList) {
-                        if (permObj instanceof Map<?, ?> permMap) {
-                            String identity = String.valueOf(permMap.get("identity"));
-                            String access = String.valueOf(permMap.get("access"));
-                            if ("read".equalsIgnoreCase(access) || "write".equalsIgnoreCase(access)) {
-                                allowedRead.add(identity);
-                            } else if ("deny".equalsIgnoreCase(access)) {
-                                deniedRead.add(identity);
+            }
+
+            Object deniedMeta = message.metadata().get("security_denied_read");
+            if (deniedMeta == null) {
+                deniedMeta = message.metadata().get(LuxirConstants.FIELD_SECURITY_DENIED_READ);
+            }
+            if (deniedMeta instanceof Collection<?> col) {
+                for (Object o : col) {
+                    if (o != null && !String.valueOf(o).isBlank()) {
+                        String id = String.valueOf(o).trim();
+                        if (!deniedRead.contains(id)) deniedRead.add(id);
+                    }
+                }
+            }
+
+            Object inhMeta = message.metadata().get("security_inheritance");
+            if (inhMeta == null) {
+                inhMeta = message.metadata().get(LuxirConstants.FIELD_SECURITY_INHERITANCE);
+            }
+            if (inhMeta != null) {
+                inheritanceEnabled = Boolean.parseBoolean(String.valueOf(inhMeta));
+            }
+
+            // Fallback to parsing security config object if not pre-mapped
+            if (allowedRead.isEmpty() && deniedRead.isEmpty()) {
+                Object securityObj = message.metadata().get("security");
+                if (securityObj instanceof Map<?, ?> securityMap) {
+                    if (securityMap.containsKey("inheritanceEnabled")) {
+                        inheritanceEnabled = Boolean.TRUE.equals(securityMap.get("inheritanceEnabled"));
+                    }
+                    Object permsObj = securityMap.get("permissions");
+                    if (permsObj instanceof List<?> permsList) {
+                        for (Object permObj : permsList) {
+                            if (permObj instanceof Map<?, ?> permMap) {
+                                String identity = String.valueOf(permMap.get("identity"));
+                                String access = String.valueOf(permMap.get("access"));
+                                if ("read".equalsIgnoreCase(access) || "write".equalsIgnoreCase(access) || "admin".equalsIgnoreCase(access)) {
+                                    if (!allowedRead.contains(identity)) allowedRead.add(identity);
+                                } else if ("deny".equalsIgnoreCase(access)) {
+                                    if (!deniedRead.contains(identity)) deniedRead.add(identity);
+                                }
                             }
                         }
                     }
-                }
-            } else if (securityObj instanceof SecurityConfig sc) {
-                inheritanceEnabled = sc.inheritanceEnabled();
-                for (PermissionRule rule : sc.permissions()) {
-                    if ("read".equalsIgnoreCase(rule.access()) || "write".equalsIgnoreCase(rule.access())) {
-                        allowedRead.add(rule.identity());
-                    } else if ("deny".equalsIgnoreCase(rule.access())) {
-                        deniedRead.add(rule.identity());
+                } else if (securityObj instanceof SecurityConfig sc) {
+                    inheritanceEnabled = sc.inheritanceEnabled();
+                    if (sc.permissions() != null) {
+                        for (PermissionRule rule : sc.permissions()) {
+                            if (rule != null && rule.identity() != null && !rule.identity().isBlank()) {
+                                String identity = rule.identity().trim();
+                                if ("read".equalsIgnoreCase(rule.access()) || "write".equalsIgnoreCase(rule.access()) || "admin".equalsIgnoreCase(rule.access())) {
+                                    if (!allowedRead.contains(identity)) allowedRead.add(identity);
+                                } else if ("deny".equalsIgnoreCase(rule.access())) {
+                                    if (!deniedRead.contains(identity)) deniedRead.add(identity);
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -146,6 +218,17 @@ public class LuxirStoreWriterConsumer {
                         .filter(s -> !s.isEmpty())
                         .toList();
                 doc.put(LuxirConstants.FIELD_ACL, aclTokens);
+                if (allowedRead.isEmpty() && deniedRead.isEmpty()) {
+                    for (String token : aclTokens) {
+                        if (!"read".equalsIgnoreCase(token) && !allowedRead.contains(token)) {
+                            allowedRead.add(token);
+                        }
+                    }
+                }
+            }
+
+            if (allowedRead.isEmpty() && deniedRead.isEmpty()) {
+                allowedRead.add("public");
             }
 
             // Zero-Trust security metadata
@@ -164,9 +247,15 @@ public class LuxirStoreWriterConsumer {
 
             // Extra metadata
             message.metadata().forEach((key, val) -> {
-                if (!"uri".equals(key) && !"acl".equals(key) && !"lastModified".equals(key)
-                        && !"security".equals(key) && !"title".equals(key) && !"source".equals(key)) {
-                    String targetKey = key.endsWith("_s") || key.endsWith("_t") || key.endsWith("_ss") ? key : key + "_s";
+                if (!RESERVED_KEYS.contains(key) && !key.equals(vectorFieldName)) {
+                    String targetKey;
+                    if (key.endsWith("_s") || key.endsWith("_t") || key.endsWith("_ss")) {
+                        targetKey = key;
+                    } else if (val instanceof Collection<?> || (val != null && val.getClass().isArray())) {
+                        targetKey = key + "_ss";
+                    } else {
+                        targetKey = key + "_s";
+                    }
                     doc.put(targetKey, val);
                 }
             });

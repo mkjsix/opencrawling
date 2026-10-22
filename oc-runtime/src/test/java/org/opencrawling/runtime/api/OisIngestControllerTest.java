@@ -152,6 +152,21 @@ class OisIngestControllerTest {
     }
 
     @Test
+    void multiReaderSecurityIncludesAllReadersInAcl() throws Exception {
+        String multiReaderDoc = upsertWithSecurity("""
+                {"permissions": [
+                  {"identity": "engineering", "identityType": "group", "access": "read"},
+                  {"identity": "finance", "identityType": "group", "access": "read"}
+                ]}""");
+
+        assertEquals(202, controller(TOKEN).ingest("7", BEARER, multiReaderDoc).getStatusCode().value());
+
+        ArgumentCaptor<RepositoryDocument> published = ArgumentCaptor.forClass(RepositoryDocument.class);
+        verify(jobOrchestrator).publishDocument(published.capture(), any());
+        assertEquals("engineering,finance", published.getValue().acl());
+    }
+
+    @Test
     void errorAnswersAreFixedPlainTextThatEchoesNoInput() {
         when(jobController.getJob("<script>")).thenReturn(ResponseEntity.ok(job));
         when(jobController.resolvePipelineMode(job)).thenReturn(PipelineMode.MIGRATION);

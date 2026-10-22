@@ -141,4 +141,14 @@ class McpAclEvaluatorTest {
         // Banned user -> DENIED
         assertFalse(McpAclEvaluator.isAccessible(meta, "banned-user", List.of()));
     }
+
+    @Test
+    void testCommaSeparatedFlatAclMatchesEveryReader() {
+        Map<String, Object> mfilesMeta = Map.of("acl", "mfiles:user:12,mfiles:group:5");
+        assertTrue(McpAclEvaluator.isAccessible(mfilesMeta, "mfiles:user:12", List.of()));
+        assertTrue(McpAclEvaluator.isAccessible(mfilesMeta, "someone", List.of("mfiles:group:5")));
+        assertFalse(McpAclEvaluator.isAccessible(mfilesMeta, "someone", List.of("mfiles:group:99")));
+
+        assertTrue(McpAclEvaluator.isAccessible("engineering, finance", List.of(), List.of(), "bob", List.of("finance")));
+    }
 }

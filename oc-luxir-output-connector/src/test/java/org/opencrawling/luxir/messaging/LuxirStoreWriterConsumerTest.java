@@ -111,4 +111,50 @@ class LuxirStoreWriterConsumerTest {
         List<Float> embedding = (List<Float>) doc.get("embedding_v");
         assertEquals(3, embedding.size());
     }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void testConsumeEmbeddedMessageDoesNotCreateSingleValuedSecurityAllowedReadField() throws Exception {
+        LuxirClient luxirClient = mock(LuxirClient.class);
+        LuxirStoreWriterConsumer consumer = new LuxirStoreWriterConsumer(luxirClient);
+        ReflectionTestUtils.setField(consumer, "collectionName", "opencrawling");
+        ReflectionTestUtils.setField(consumer, "vectorFieldName", "embedding_v");
+        ReflectionTestUtils.setField(consumer, "autoCommit", true);
+
+        DocumentEmbeddedMessage message = new DocumentEmbeddedMessage(
+                "doc-luxir-3",
+                "chunk-luxir-3",
+                "Text content",
+                Map.of(
+                        "uri", "file:///data/luxir-test.txt",
+                        "acl", "public",
+                        "security_allowed_read", List.of("public", "engineering"),
+                        "security_denied_read", List.of("contractor"),
+                        "security_inheritance", false,
+                        "custom_tags", List.of("tag1", "tag2")
+                ),
+                new float[]{0.5f},
+                DocumentAction.UPSERT
+        );
+
+        consumer.consume(message);
+
+        ArgumentCaptor<List<Map<String, Object>>> captor = ArgumentCaptor.forClass(List.class);
+        verify(luxirClient).updateDocuments(eq("opencrawling"), captor.capture(), eq(true));
+
+        Map<String, Object> doc = captor.getValue().getFirst();
+
+        // Must NOT contain single-valued _s suffix for security fields
+        org.junit.jupiter.api.Assertions.assertFalse(doc.containsKey("security_allowed_read_s"),
+                "Field 'security_allowed_read_s' should not exist as it causes Luxir single-valued collision");
+        org.junit.jupiter.api.Assertions.assertFalse(doc.containsKey("security_denied_read_s"));
+
+        // Must map to multi-valued _ss in Luxir schema
+        assertEquals(List.of("public", "engineering"), doc.get("security_allowed_read_ss"));
+        assertEquals(List.of("contractor"), doc.get("security_denied_read_ss"));
+        assertEquals("false", doc.get("security_inheritance_s"));
+
+        // Custom multi-valued metadata should receive _ss suffix
+        assertEquals(List.of("tag1", "tag2"), doc.get("custom_tags_ss"));
+    }
 }
