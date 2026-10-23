@@ -75,6 +75,7 @@ graph TD
         APS_Conn[Alfresco Process Services - oc-aps-repository-connector]
         CMIS_Conn[OASIS CMIS Repository - oc-cmis-repository-connector]
         Doxis_Repo_Conn[Doxis 4 Repository - oc-doxis-repository-connector]
+        SharePoint_Conn[SharePoint Online Repository - oc-sharepoint-repository-connector]
         Iceberg_Conn[Iceberg Repository - oc-iceberg-repository-connector]
         Flowable_Conn[Flowable Repository - oc-flowable-repository-connector]
         Camunda_Conn[Camunda Repository - oc-camunda-repository-connector]
@@ -510,7 +511,7 @@ docker compose -f docker/docker-compose.dist.yml -f docker/docker-compose.overri
 - **Apache Ozone 2.2.0**: High-performance distributed object store offloading large document payloads with dual client strategy:
   - **Native Ozone Client (`ofs` / `o3fs`)**: Direct gRPC/RPC transport to DataNodes & Ozone Manager (OM) for maximum throughput.
   - **S3 Gateway Client (`s3g`)**: Standard AWS S3 SDK integration hitting Ozone's S3 Gateway endpoint for maximum cloud versatility.
-- **Repository Connectors**: Multi-source connectors for Filesystem, Alfresco Content Services (ACS), **Alfresco Process Services (APS)**, **OASIS CMIS (1.0/1.1)**, **Doxis 4 (CSB REST)**, Apache Iceberg, Flowable BPMN, Camunda, Apache StormCrawler, and **gRPC Push Ingestion Gateway**.
+- **Repository Connectors**: Multi-source connectors for Filesystem, Alfresco Content Services (ACS), **Alfresco Process Services (APS)**, **OASIS CMIS (1.0/1.1)**, **Doxis 4 (CSB REST)**, **SharePoint Online (Microsoft Graph)**, Apache Iceberg, Flowable BPMN, Camunda, Apache StormCrawler, and **gRPC Push Ingestion Gateway**.
 - **pgvector**: High-dimensional vector similarity search in PostgreSQL.
 - **Milvus**: High-performance, distributed vector database for large-scale enterprise vector indexing.
 - **Qdrant**: Rust-based vector search engine with payload-indexed ACL pre-filtering and optional scalar/binary quantization.
@@ -882,6 +883,39 @@ mvn spring-boot:run -pl oc-runtime -Dspring-boot.run.profiles=dev
 
 In the Admin UI it is the **Doxis Repository** repository connector. See
 [oc-doxis-repository-connector/README.md](oc-doxis-repository-connector/README.md).
+
+### Option A.8.c: SharePoint Online Repository Crawling
+
+[![SharePoint](https://img.shields.io/badge/SharePoint_Online-Microsoft_Graph_v1.0-0078D4.svg?style=flat)](https://learn.microsoft.com/en-us/graph/api/resources/sharepoint)
+
+To crawl the document libraries of a SharePoint Online site, select the SharePoint repository connector and give it an
+Entra ID app registration:
+
+> **Prerequisites:** a Microsoft Entra ID app registration with a client secret and the admin-consented Microsoft Graph
+> application permission `Sites.Read.All` (or `Sites.Selected` with read access to the site). See the
+> [full prerequisites](oc-sharepoint-repository-connector/README.md#prerequisites) before configuring a crawl.
+
+```bash
+SPRING_OPENCRAWLING_REPOSITORY_CONNECTOR_TYPE=sharepoint \
+SPRING_OPENCRAWLING_CONNECTOR_TYPE=sharepoint \
+SPRING_OPENCRAWLING_CONNECTOR_SHAREPOINT_TENANT_ID=<tenant-id> \
+SPRING_OPENCRAWLING_CONNECTOR_SHAREPOINT_CLIENT_ID=<client-id> \
+SPRING_OPENCRAWLING_CONNECTOR_SHAREPOINT_CLIENT_SECRET=<client-secret> \
+SPRING_OPENCRAWLING_CONNECTOR_SHAREPOINT_SITE_URL=https://<tenant>.sharepoint.com/sites/<site> \
+mvn spring-boot:run -pl oc-runtime -Dspring-boot.run.profiles=dev
+```
+
+`SharePointRepositoryConnector` reads files through Microsoft Graph v1.0.
+- **What it crawls:** every document library of the site, or the ones named in `drive-names`, through Graph delta
+  queries (`crawl-mode: delta`, incremental) or a folder traversal (`crawl-mode: tree`).
+- **What each file carries:** its list item columns, its content, and its Graph permissions as OIS permissions. Files
+  without readers stay closed.
+- **Deletes:** deleted files and folders become `DELETE` tombstones.
+- **Permission-only changes:** a periodic tree crawl picks them up.
+
+In the Admin UI it is the **Microsoft SharePoint (Microsoft Graph API)** repository connector. The
+[Graph mock](oc-sharepoint-repository-connector/graph-mock/README.md) emulates a tenant for local testing. See
+[oc-sharepoint-repository-connector/README.md](oc-sharepoint-repository-connector/README.md).
 
 ### Option A.9: Decoupled Apache SeaTunnel-Based Deployment
 
