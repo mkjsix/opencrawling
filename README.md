@@ -1,6 +1,7 @@
 # OpenCrawling
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg?style=flat)](LICENSE)
+[![End-to-End Integration Tests](https://github.com/opencrawling/opencrawling/actions/workflows/integration-tests.yml/badge.svg)](https://github.com/opencrawling/opencrawling/actions/workflows/integration-tests.yml)
 [![GitHub Stars](https://img.shields.io/github/stars/opencrawling/opencrawling?style=flat&logo=github&color=blue)](https://github.com/opencrawling/opencrawling/stargazers)
 [![GitHub Issues](https://img.shields.io/github/issues/opencrawling/opencrawling.svg?style=flat&logo=github)](https://github.com/opencrawling/opencrawling/issues)
 [![GitHub Commit Activity](https://img.shields.io/github/commit-activity/m/opencrawling/opencrawling.svg?style=flat&logo=github)](https://github.com/opencrawling/opencrawling/commits/main)
