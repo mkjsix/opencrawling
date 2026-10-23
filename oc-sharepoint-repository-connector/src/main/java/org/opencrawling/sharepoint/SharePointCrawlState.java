@@ -32,14 +32,14 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * The crawl state of one document library and crawl scope (mode and root folder):
+ * The crawl state of one document library (or of a narrower tree-crawl scope):
  * <ul>
  *   <li>{@code deltaLink}: where the next delta query continues (delta mode);</li>
  *   <li>{@code items}: every folder and file seen, with its parent, name, eTag and (files) ACL fingerprint. Folders give
  *       paths (delta pages omit them) and let a deleted folder take its known files with it; files let unchanged ones be
  *       skipped while a permission-only change is still noticed.</li>
  * </ul>
- * Stored as JSON, written atomically, one file per library and scope.
+ * Stored as JSON, written atomically, one file per library (see {@link #file}).
  */
 final class SharePointCrawlState {
 
@@ -66,8 +66,18 @@ final class SharePointCrawlState {
         return new SharePointCrawlState(null, new ConcurrentHashMap<>());
     }
 
+    /**
+     * The state file of a library. Delta crawls and tree crawls of the whole library (from the root, with sub-folders) share
+     * one state, so a periodic tree crawl only re-emits what delta could not see (permission-only changes), and delta then
+     * skips what the tree crawl already emitted. A tree crawl of a narrower scope keeps its own state: compared with the
+     * whole library's, every file outside its scope would look deleted.
+     */
     static Path file(SharePointProperties settings, String driveId) {
-        String scope = settings.crawlMode() + "|" + settings.rootFolderPath() + "|" + driveId;
+        String root = settings.rootFolderPath() == null ? "" : settings.rootFolderPath().strip().replaceAll("^/+|/+$", "");
+        boolean wholeLibrary = settings.crawlMode() == SharePointProperties.CrawlMode.DELTA
+                || (root.isEmpty() && settings.includeSubfolders());
+        String scope = wholeLibrary ? "library|" + driveId
+                : "tree|" + root + "|" + settings.includeSubfolders() + "|" + driveId;
         try {
             byte[] digest = MessageDigest.getInstance("SHA-256").digest(scope.getBytes(StandardCharsets.UTF_8));
             return Path.of(settings.stateDirectory()).resolve("drive-" + HexFormat.of().formatHex(digest, 0, 10) + ".json");

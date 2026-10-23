@@ -181,6 +181,20 @@ class SharePointMockServerTest {
     }
 
     @Test
+    void treeCrawlAfterDeltaReusesTheState() throws Exception {
+        scan(connector(Map.of("driveName", "Documents")));
+        List<RepositoryDocument> tree = scan(connector(Map.of("driveName", "Documents", "crawlMode", "tree")));
+        assertEquals(List.of(), tree.stream().map(RepositoryDocument::id).toList(),
+                "a tree crawl right after a delta crawl finds nothing new");
+        List<RepositoryDocument> specs = scan(connector(Map.of("driveName", "Documents", "crawlMode", "tree",
+                "rootFolderPath", "/Specs")));
+        assertTrue(ids(specs, DocumentAction.DELETE).isEmpty(), "a narrower tree crawl keeps its own state: no false deletes");
+        assertFalse(ids(specs, DocumentAction.UPSERT).isEmpty());
+        assertTrue(specs.stream().allMatch(d -> d.metadata().get("sharepoint.path").getFirst().startsWith("/Specs/")));
+        assertTrue(scan(connector(Map.of("driveName", "Documents"))).isEmpty(), "and the library's delta state is untouched");
+    }
+
+    @Test
     void resyncReEnumeratesAndPurgesWhatVanished() throws Exception {
         Map<String, String> config = Map.of("driveName", "Documents");
         scan(connector(config));
