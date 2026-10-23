@@ -70,6 +70,30 @@ class VectorOutputConnectorTest {
         assertFalse(addedChunks.isEmpty());
         assertNotNull(addedChunks.get(0).getMetadata().get("embedding"));
         assertArrayEquals(mockEmbedding, (float[]) addedChunks.get(0).getMetadata().get("embedding"));
+        assertEquals(List.of(), addedChunks.get(0).getMetadata().get("security_allowed_read"));
+    }
+
+    @Test
+    void testSendWithPublicSecurityConfigPopulatesPublicAllowedRead() {
+        byte[] content = "Public content test.".getBytes();
+        RepositoryDocument repoDoc = mock(RepositoryDocument.class);
+        when(repoDoc.id()).thenReturn("doc-pub");
+        when(repoDoc.contentStream()).thenReturn(new ByteArrayInputStream(content));
+        when(repoDoc.metadata()).thenReturn(Map.of("mimeType", List.of("text/plain")));
+        when(repoDoc.uri()).thenReturn("file://doc-pub");
+        when(repoDoc.acl()).thenReturn("public");
+        when(repoDoc.security()).thenReturn(org.opencrawling.core.security.SecurityConfig.createPublic());
+        when(repoDoc.lastModified()).thenReturn(Instant.now());
+
+        when(embeddingModel.embed(anyString())).thenReturn(new float[]{0.1f, 0.2f});
+
+        connector.send(repoDoc).block();
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<Document>> captor = ArgumentCaptor.forClass(List.class);
+        verify(vectorStore, atLeastOnce()).add(captor.capture());
+
+        List<Document> addedChunks = captor.getValue();
         assertEquals(List.of("public"), addedChunks.get(0).getMetadata().get("security_allowed_read"));
     }
 

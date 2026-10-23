@@ -48,17 +48,20 @@ print_logs() {
   compose logs oc-mcp-server oc-ingestion-consumer oc-embedding-consumer oc-writer-consumer | tail -200
 }
 
-# Rows of DOC_ID across the four pgvector tables
+# Rows of a document ID across the four pgvector tables
 rows() {
+  local id="${1:-$DOC_ID}"
   docker exec -i postgres-vector-decoupled psql -U opencrawling -d opencrawling -t -A -c \
-    "SELECT (SELECT count(*) FROM vector_store WHERE metadata->>'documentId' = '${DOC_ID}')
-          + (SELECT count(*) FROM vector_store_384 WHERE metadata->>'documentId' = '${DOC_ID}')
-          + (SELECT count(*) FROM vector_store_768 WHERE metadata->>'documentId' = '${DOC_ID}')
-          + (SELECT count(*) FROM vector_store_1024 WHERE metadata->>'documentId' = '${DOC_ID}');" 2>/dev/null | tr -d '[:space:]'
+    "SELECT (SELECT count(*) FROM vector_store WHERE metadata->>'documentId' = '${id}')
+          + (SELECT count(*) FROM vector_store_384 WHERE metadata->>'documentId' = '${id}')
+          + (SELECT count(*) FROM vector_store_768 WHERE metadata->>'documentId' = '${id}')
+          + (SELECT count(*) FROM vector_store_1024 WHERE metadata->>'documentId' = '${id}');" 2>/dev/null | tr -d '[:space:]'
 }
 
 has_rows() { [ "$(rows)" -gt 0 ] 2>/dev/null; }
 has_no_rows() { [ "$(rows)" = "0" ]; }
+has_rows_for() { [ "$(rows "$1")" -gt 0 ] 2>/dev/null; }
+has_no_rows_for() { [ "$(rows "$1")" = "0" ]; }
 
 # post <body> [authorization]: prints the HTTP status
 post() {
@@ -131,5 +134,45 @@ fi
 echo -e "${GREEN}DELETE accepted (202)${NC}"
 
 wait_until "no rows of ${DOC_ID} left in pgvector" 300 has_no_rows
+
+# Ingest and verify document with empty permissions (Zero-Trust default deny: security_allowed_read="[]")
+EMPTY_DOC_ID="http://ois-decoupled-test/$(date +%s)/empty-permissions.html"
+EMPTY_MARKER="ois-decoupled-empty-marker-$(date +%s)"
+
+EMPTY_UPSERT=$(cat <<EOF
+{"id": "${EMPTY_DOC_ID}", "action": "UPSERT",
+ "content": {"mimeType": "text/html", "text": "OpenCrawling OIS empty permissions test page ${EMPTY_MARKER}"},
+ "metadata": {"title": "OIS empty permissions test"},
+ "security": {"inheritanceEnabled": false,
+              "permissions": []}}
+EOF
+)
+STATUS=$(post "$EMPTY_UPSERT" "Bearer ${OPENCRAWLING_INGEST_OIS_TOKEN}")
+if [ "$STATUS" != "202" ]; then
+  echo -e "${RED}Empty permissions UPSERT answered ${STATUS}, expected 202.${NC}"
+  print_logs
+  exit 1
+fi
+echo -e "${GREEN}Empty permissions UPSERT accepted (202)${NC}"
+
+wait_until "rows of ${EMPTY_DOC_ID} in pgvector" 300 has_rows_for "$EMPTY_DOC_ID"
+
+ALLOWED_READ=$(docker exec -i postgres-vector-decoupled psql -U opencrawling -d opencrawling -t -A -c \
+  "SELECT metadata->>'security_allowed_read' FROM vector_store_1024 WHERE metadata->>'documentId' = '${EMPTY_DOC_ID}' LIMIT 1;" 2>/dev/null | tr -d '[:space:]')
+if [ "$ALLOWED_READ" != "[]" ]; then
+  echo -e "${RED}Empty permissions document stored security_allowed_read='${ALLOWED_READ}', expected '[]'${NC}"
+  exit 1
+fi
+echo -e "${GREEN}Empty permissions document stored with empty security_allowed_read: '[]' (not defaulted to public)${NC}"
+
+STATUS=$(post "{\"id\": \"${EMPTY_DOC_ID}\", \"action\": \"DELETE\"}" "Bearer ${OPENCRAWLING_INGEST_OIS_TOKEN}")
+if [ "$STATUS" != "202" ]; then
+  echo -e "${RED}Empty permissions DELETE answered ${STATUS}, expected 202.${NC}"
+  print_logs
+  exit 1
+fi
+echo -e "${GREEN}Empty permissions DELETE accepted (202)${NC}"
+
+wait_until "no rows of ${EMPTY_DOC_ID} left in pgvector" 300 has_no_rows_for "$EMPTY_DOC_ID"
 
 echo -e "${GREEN}=== OIS ingest endpoint decoupled test passed ===${NC}"

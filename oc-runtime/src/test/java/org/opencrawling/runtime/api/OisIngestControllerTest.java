@@ -167,6 +167,23 @@ class OisIngestControllerTest {
     }
 
     @Test
+    void upsertWithEmptyPermissionsIsPublishedWithEmptyAcl() throws Exception {
+        String docWithEmptyPerms = """
+                {"id": "http://example.com/nobody.html", "action": "UPSERT",
+                 "content": {"mimeType": "text/html", "text": "nobody can read this"},
+                 "security": {"inheritanceEnabled": false, "permissions": []}}
+                """;
+
+        assertEquals(202, controller(TOKEN).ingest("7", BEARER, docWithEmptyPerms).getStatusCode().value());
+
+        ArgumentCaptor<RepositoryDocument> published = ArgumentCaptor.forClass(RepositoryDocument.class);
+        verify(jobOrchestrator).publishDocument(published.capture(), any());
+        RepositoryDocument doc = published.getValue();
+        assertEquals("", doc.acl());
+        assertTrue(doc.security().permissions().isEmpty());
+    }
+
+    @Test
     void errorAnswersAreFixedPlainTextThatEchoesNoInput() {
         when(jobController.getJob("<script>")).thenReturn(ResponseEntity.ok(job));
         when(jobController.resolvePipelineMode(job)).thenReturn(PipelineMode.MIGRATION);

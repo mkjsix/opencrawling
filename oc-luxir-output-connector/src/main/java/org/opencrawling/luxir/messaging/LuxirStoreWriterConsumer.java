@@ -227,10 +227,6 @@ public class LuxirStoreWriterConsumer {
                 }
             }
 
-            if (allowedRead.isEmpty() && deniedRead.isEmpty()) {
-                allowedRead.add("public");
-            }
-
             // Zero-Trust security metadata
             doc.put(LuxirConstants.FIELD_SECURITY_INHERITANCE, String.valueOf(inheritanceEnabled));
             doc.put(LuxirConstants.FIELD_SECURITY_ALLOWED_READ, allowedRead);

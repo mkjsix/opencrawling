@@ -425,11 +425,13 @@ DOC_PUBLIC="http://mcp-test.opencrawling.org/docs/public-guidelines.html"
 DOC_ENG="http://mcp-test.opencrawling.org/docs/engineering-architecture.html"
 DOC_FIN="http://mcp-test.opencrawling.org/docs/finance-q4-budget.html"
 DOC_AUDIT="http://mcp-test.opencrawling.org/docs/contractor-security-audit.html"
+DOC_NOBODY="http://mcp-test.opencrawling.org/docs/nobody-restricted.html"
 
 MARKER_PUBLIC="mcp-marker-public-$(date +%s)"
 MARKER_ENG="mcp-marker-engineering-$(date +%s)"
 MARKER_FIN="mcp-marker-finance-$(date +%s)"
 MARKER_AUDIT="mcp-marker-audit-$(date +%s)"
+MARKER_NOBODY="mcp-marker-nobody-$(date +%s)"
 
 ingest_ois_doc() {
   local doc_json="$1"
@@ -524,6 +526,24 @@ ingest_ois_doc "$(cat <<EOF
 EOF
 )"
 
+log_info "Ingesting Document 5 (Nobody / Empty Permissions - Zero-Trust Default Deny)..."
+ingest_ois_doc "$(cat <<EOF
+{
+  "id": "${DOC_NOBODY}",
+  "action": "UPSERT",
+  "content": {
+    "mimeType": "text/html",
+    "text": "Highly classified zero-trust vault. Empty permissions must deny access to all callers. Marker: ${MARKER_NOBODY}"
+  },
+  "metadata": {"title": "Restricted Nobody", "department": "nobody"},
+  "security": {
+    "inheritanceEnabled": false,
+    "permissions": []
+  }
+}
+EOF
+)"
+
 # Wait for Kafka consumers to process and store records in PostgreSQL pgvector
 count_db_rows() {
   local doc_id="$1"
@@ -545,8 +565,18 @@ wait_for_doc_indexing "${DOC_PUBLIC}" "Public Document"
 wait_for_doc_indexing "${DOC_ENG}" "Engineering Document"
 wait_for_doc_indexing "${DOC_FIN}" "Finance Document"
 wait_for_doc_indexing "${DOC_AUDIT}" "Audit Document with Explicit Deny"
+wait_for_doc_indexing "${DOC_NOBODY}" "Nobody Document with Empty Permissions"
 
-log_pass "Decoupled messaging pipeline processed all 4 multi-ACL documents into pgvector"
+# Verify storage parity: security_allowed_read must be '[]' and never defaulted to 'public'
+NOBODY_ALLOWED_READ=$(docker exec -i postgres-vector-decoupled psql -U opencrawling -d opencrawling -t -A -c \
+  "SELECT metadata->>'security_allowed_read' FROM vector_store_1024 WHERE metadata->>'documentId' = '${DOC_NOBODY}' LIMIT 1;" 2>/dev/null | tr -d '[:space:]')
+if [ "$NOBODY_ALLOWED_READ" != "[]" ]; then
+  log_fail "Zero-Trust storage violation: Document with empty permissions stored security_allowed_read='$NOBODY_ALLOWED_READ', expected '[]'!"
+  exit 1
+fi
+log_info "Storage parity verified: Document with empty permissions has security_allowed_read='[]' (not 'public')."
+
+log_pass "Decoupled messaging pipeline processed all 5 multi-ACL documents into pgvector"
 
 # ------------------------------------------------------------------------------
 # STEP 8: Zero-Trust Security & Identity-Aware Retrieval (secureVectorSearch)
@@ -628,6 +658,10 @@ echo "$GUEST_SEARCH_RESP" | grep -q "${DOC_FIN}" && {
   log_fail "Zero-Trust violation: Finance document leaked to guest caller!"
   exit 1
 }
+echo "$GUEST_SEARCH_RESP" | grep -q "${DOC_NOBODY}" && {
+  log_fail "Zero-Trust violation: Document with empty permissions leaked to guest caller!"
+  exit 1
+}
 log_info "Assertion 8.3 PASS: Public document accessible; restricted documents withheld."
 
 # 8.4 Explicit Deny Precedence
@@ -646,6 +680,32 @@ echo "$DENIED_SEARCH_RESP" | grep -q "${DOC_AUDIT}" && {
   exit 1
 }
 log_info "Assertion 8.4b PASS: Explicit deny precedence successfully blocked blacklisted user!"
+
+# 8.5 Empty Permissions Isolation (Nobody)
+log_info "8.5: Querying as Outsider with No Roles (principal: 'outsider', roles: '')..."
+OUTSIDER_SEARCH_RESP=$(invoke_secure_search "zero-trust vault" "outsider" "")
+log_info "Outsider search response: ${OUTSIDER_SEARCH_RESP}"
+
+echo "$OUTSIDER_SEARCH_RESP" | grep -q "${DOC_NOBODY}" && {
+  log_fail "Zero-Trust violation: Document with empty permissions leaked to outsider via secureVectorSearch!"
+  exit 1
+}
+echo "$OUTSIDER_SEARCH_RESP" | grep -q "${DOC_ENG}" && {
+  log_fail "Zero-Trust violation: Engineering document leaked to outsider via secureVectorSearch!"
+  exit 1
+}
+echo "$OUTSIDER_SEARCH_RESP" | grep -q "${DOC_FIN}" && {
+  log_fail "Zero-Trust violation: Finance document leaked to outsider via secureVectorSearch!"
+  exit 1
+}
+
+# Also verify that even an engineering caller cannot retrieve DOC_NOBODY
+ENG_NOBODY_RESP=$(invoke_secure_search "zero-trust vault" "alice@company.com" "engineering")
+echo "$ENG_NOBODY_RESP" | grep -q "${DOC_NOBODY}" && {
+  log_fail "Zero-Trust violation: Document with empty permissions leaked to engineering caller via secureVectorSearch!"
+  exit 1
+}
+log_info "Assertion 8.5 PASS: Document with empty permissions withheld from all callers in secureVectorSearch."
 log_pass "MCP secureVectorSearch authoritative Zero-Trust filtering and Explicit Deny precedence passed"
 
 # ------------------------------------------------------------------------------
@@ -702,6 +762,17 @@ if echo "$UNAUTH_CONTENT_RESP" | grep -q "${MARKER_ENG}"; then
   exit 1
 fi
 log_info "Assertion 9.2 PASS: Unauthorized user denied access to document content."
+
+# 9.3 Unauthorized retrieval of empty-permissions document
+log_info "9.3: Retrieving '${DOC_NOBODY}' as outsider..."
+OUTSIDER_CONTENT_RESP=$(invoke_get_content "${DOC_NOBODY}" "outsider" "")
+log_info "Outsider document content response: ${OUTSIDER_CONTENT_RESP}"
+
+if echo "$OUTSIDER_CONTENT_RESP" | grep -q "${MARKER_NOBODY}"; then
+  log_fail "Zero-Trust violation: Outsider retrieved content of empty-permissions document!"
+  exit 1
+fi
+log_info "Assertion 9.3 PASS: Outsider denied access to empty-permissions document content."
 log_pass "MCP getDocumentContent accurately enforced content security boundaries"
 
 # ------------------------------------------------------------------------------
@@ -746,6 +817,10 @@ echo "$ENG_SOURCES_RESP" | grep -q "${DOC_FIN}" && {
   log_fail "Zero-Trust violation: Finance document visible in engineering sources list!"
   exit 1
 }
+echo "$ENG_SOURCES_RESP" | grep -q "${DOC_NOBODY}" && {
+  log_fail "Zero-Trust violation: Empty-permissions document visible in engineering sources list!"
+  exit 1
+}
 
 log_info "Listing accessible sources for finance caller..."
 FIN_SOURCES_RESP=$(invoke_list_sources "bob@company.com" "finance")
@@ -757,7 +832,26 @@ echo "$FIN_SOURCES_RESP" | grep -q "${DOC_ENG}" && {
   log_fail "Zero-Trust violation: Engineering document visible in finance sources list!"
   exit 1
 }
+echo "$FIN_SOURCES_RESP" | grep -q "${DOC_NOBODY}" && {
+  log_fail "Zero-Trust violation: Empty-permissions document visible in finance sources list!"
+  exit 1
+}
 
+log_info "Listing accessible sources for outsider caller..."
+OUTSIDER_SOURCES_RESP=$(invoke_list_sources "outsider" "")
+echo "$OUTSIDER_SOURCES_RESP" | grep -q "${DOC_NOBODY}" && {
+  log_fail "Zero-Trust violation: Empty-permissions document visible in outsider sources list!"
+  exit 1
+}
+echo "$OUTSIDER_SOURCES_RESP" | grep -q "${DOC_ENG}" && {
+  log_fail "Zero-Trust violation: Engineering document visible in outsider sources list!"
+  exit 1
+}
+echo "$OUTSIDER_SOURCES_RESP" | grep -q "${DOC_FIN}" && {
+  log_fail "Zero-Trust violation: Finance document visible in outsider sources list!"
+  exit 1
+}
+log_info "Assertion 10 PASS: Empty-permissions document withheld across all catalog discovery callers."
 log_pass "MCP listAccessibleSources accurately scoped accessible document catalogs by identity"
 
 # ------------------------------------------------------------------------------
@@ -835,10 +929,10 @@ log_pass "REST Observability API endpoints verified alongside MCP tool surface"
 # ------------------------------------------------------------------------------
 # STEP 14: In-Process Backend SPI & ACL Evaluator Integration Tests (JUnit)
 # ------------------------------------------------------------------------------
-log_step "14" "Running comprehensive in-process JUnit integration test suite (McpServerCapabilitiesIntegrationTest, McpVectorServerTest, McpAclEvaluatorTest)..."
+log_step "14" "Running comprehensive in-process JUnit integration test suite (McpServerCapabilitiesIntegrationTest, McpVectorServerTest, McpAclEvaluatorTest, PgVectorMcpSearchBackendTest)..."
 
 mvn test -pl oc-runtime -am \
-  -Dtest=McpServerCapabilitiesIntegrationTest,McpVectorServerTest,McpAclEvaluatorTest \
+  -Dtest=McpServerCapabilitiesIntegrationTest,McpVectorServerTest,McpAclEvaluatorTest,PgVectorMcpSearchBackendTest \
   -Dsurefire.failIfNoSpecifiedTests=false
 
 log_pass "In-process JUnit integration suite executed successfully with 100% assertions passing"
@@ -859,6 +953,7 @@ echo -e "  ✔ AIOps Observability tools (fetchJobTraces, getErrorLogs, queryThr
 echo -e "  ✔ Decoupled multi-service OIS document ingestion pipeline over Kafka"
 echo -e "  ✔ Authoritative Zero-Trust ACL defense-in-depth retrieval (secureVectorSearch)"
 echo -e "  ✔ Explicit Deny Precedence security guard against malicious/blacklisted identities"
+echo -e "  ✔ Empty permissions default-deny isolation across all tools (nobody access)"
 echo -e "  ✔ Identity-aware full-text document content retrieval (getDocumentContent)"
 echo -e "  ✔ Identity-scoped document catalog discovery (listAccessibleSources)"
 echo -e "  ✔ Multi-dimension vector store resolution (384, 768, 1024)"

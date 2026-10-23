@@ -37,13 +37,33 @@ class McpAclEvaluatorTest {
 
     @Test
     void testPublicAccessDefault() {
-        // Null metadata defaults to public
-        assertTrue(McpAclEvaluator.isAccessible((Map<String, Object>) null, "alice", List.of("guest")));
-        // Empty metadata defaults to public
-        assertTrue(McpAclEvaluator.isAccessible(Map.of(), "bob", List.of()));
-        // Explicit "public" acl
+        // Null metadata defaults to deny under Zero Trust
+        assertFalse(McpAclEvaluator.isAccessible((Map<String, Object>) null, "alice", List.of("guest")));
+        // Empty metadata defaults to deny under Zero Trust
+        assertFalse(McpAclEvaluator.isAccessible(Map.of(), "bob", List.of()));
+        // Explicit "public" acl allows access
         assertTrue(McpAclEvaluator.isAccessible(Map.of("acl", "public"), "charlie", List.of()));
         assertTrue(McpAclEvaluator.isAccessible(Map.of("acl", "PUBLIC"), null, null));
+        // Explicit SecurityConfig.createPublic() allows access
+        assertTrue(McpAclEvaluator.isAccessible(Map.of("security", SecurityConfig.createPublic()), "outsider", List.of()));
+    }
+
+    @Test
+    void testEmptyPermissionsListDeniesAccess() {
+        // Structured SecurityConfig with empty permissions list
+        SecurityConfig emptySc = new SecurityConfig(false, List.of());
+        assertFalse(McpAclEvaluator.isAccessible(Map.of("security", emptySc), "outsider", List.of()));
+
+        // Structured Map with empty permissions list (JSON deserialized)
+        Map<String, Object> emptyMap = Map.of("security", Map.of("permissions", List.of()));
+        assertFalse(McpAclEvaluator.isAccessible(emptyMap, "outsider", List.of()));
+
+        // Empty string acl
+        assertFalse(McpAclEvaluator.isAccessible(Map.of("acl", ""), "outsider", List.of()));
+
+        // Explicitly empty security_allowed_read
+        assertFalse(McpAclEvaluator.isAccessible(Map.of("security_allowed_read", List.of()), "outsider", List.of()));
+        assertFalse(McpAclEvaluator.isAccessible(Map.of("security_allowed_read", List.of(), "acl", ""), "outsider", List.of()));
     }
 
     @Test

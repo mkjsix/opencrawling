@@ -157,4 +157,36 @@ class PgVectorMcpSearchBackendTest {
         assertThat(exprStr).contains("user1");
         assertThat(exprStr).contains("public");
     }
+
+    @Test
+    void testEmptyPermissionsDocumentExcludedFromAllToolsForOutsider() {
+        // A document pushed with "permissions": [] has:
+        // acl="", security_allowed_read=[], and security.permissions=[]
+        String docUri = "http://repro.example/nobody-access.html";
+        Map<String, Object> emptyPermsMeta = Map.of(
+                "uri", docUri,
+                "acl", "",
+                "security_allowed_read", List.of(),
+                "security", Map.of("permissions", List.of())
+        );
+        Document emptyPermsDoc = new Document("doc-empty-perms", "Confidential text for nobody.", emptyPermsMeta);
+
+        // 1. secureVectorSearch as outsider -> excluded by McpAclEvaluator even if returned by similaritySearch
+        when(embeddingModel.embed(anyString())).thenReturn(new float[]{0.1f, 0.2f});
+        when(vectorStore.similaritySearch(any(SearchRequest.class))).thenReturn(List.of(emptyPermsDoc));
+
+        List<McpVectorServer.DocumentSearchResult> searchResults = backend.secureVectorSearch(
+                "confidential", "outsider", List.of(), 5, 0.0, null
+        );
+        assertThat(searchResults).isEmpty();
+
+        // 2. getDocumentContent as outsider -> throws NoSuchElementException (access denied)
+        assertThatThrownBy(() -> backend.getDocumentContent(docUri, "outsider", List.of(), null))
+                .isInstanceOf(NoSuchElementException.class)
+                .hasMessageContaining("Document not found or access denied.");
+
+        // 3. listAccessibleSources as outsider -> excluded from results
+        List<Map<String, Object>> sources = backend.listAccessibleSources("outsider", List.of(), null);
+        assertThat(sources).isEmpty();
+    }
 }

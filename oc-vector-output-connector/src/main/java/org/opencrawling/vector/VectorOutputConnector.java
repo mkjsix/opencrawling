@@ -185,10 +185,6 @@ public class VectorOutputConnector implements OutputConnector {
                     }
                 }
 
-                if (allowedRead.isEmpty() && deniedRead.isEmpty()) {
-                    allowedRead.add("public");
-                }
-
                 metadata.put("security_inheritance", inheritanceEnabled);
                 metadata.put("security_allowed_read", allowedRead);
                 metadata.put("security_denied_read", deniedRead);

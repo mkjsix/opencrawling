@@ -25,7 +25,7 @@ import java.util.*;
  * Evaluates access rules authoritatively before returning any document matches to LLMs:
  * 1. Explicit DENY always takes precedence and rejects the hit immediately.
  * 2. Explicit READ or WRITE grants access if the caller's identity (userPrincipal, any userRoles, or public) matches.
- * 3. Falls back to flat ACL rules (e.g. "acl" or "acl_ss", defaulting to "public") when structured security is absent.
+ * 3. Falls back to flat ACL rules (e.g. "acl" or "acl_ss") when structured security is absent. An empty permission/ACL list denies access by default.
  */
 public final class McpAclEvaluator {
 
@@ -60,7 +60,7 @@ public final class McpAclEvaluator {
      */
     public static boolean isAccessible(Map<String, Object> metadata, String userPrincipal, Collection<String> userRoles) {
         if (metadata == null) {
-            return isAccessible(Collections.singletonList(PUBLIC_IDENTITY), Collections.emptyList(), Collections.emptyList(), userPrincipal, userRoles);
+            return false;
         }
 
         // 1. Check for structured "security" object (SecurityConfig or Map)
@@ -72,8 +72,13 @@ public final class McpAclEvaluator {
         }
 
         // 2. Check for flattened security fields: security_allowed_read / security_denied_read
+        boolean hasStructuredAllowed = metadata.containsKey("security_allowed_read") || metadata.containsKey("security_allowed_read_ss");
         List<String> allowedRead = extractStringList(metadata.getOrDefault("security_allowed_read", metadata.get("security_allowed_read_ss")));
         List<String> deniedRead = extractStringList(metadata.getOrDefault("security_denied_read", metadata.get("security_denied_read_ss")));
+
+        if (hasStructuredAllowed && allowedRead.isEmpty()) {
+            return false;
+        }
 
         List<String> acls = extractStringList(metadata.getOrDefault("acl", metadata.get("acl_ss")));
 
@@ -104,16 +109,16 @@ public final class McpAclEvaluator {
             return matchesAnyIdentity(allowedRead, userPrincipal, userRoles);
         }
 
-        // 3. Flat ACL fallback (defaulting to "public" if acls is empty)
+        // 3. Flat ACL fallback
         if (acls == null || acls.isEmpty()) {
-            return true;
+            return false;
         }
         return matchesAnyIdentity(acls, userPrincipal, userRoles);
     }
 
     private static boolean evaluateSecurityConfig(SecurityConfig sc, String userPrincipal, Collection<String> userRoles) {
         if (sc == null || sc.permissions() == null || sc.permissions().isEmpty()) {
-            return true; // No restrictive rules
+            return false;
         }
 
         boolean hasReadAccess = false;
@@ -134,7 +139,7 @@ public final class McpAclEvaluator {
     private static boolean evaluateSecurityMap(Map<?, ?> sm, String userPrincipal, Collection<String> userRoles) {
         Object permissionsObj = sm.get("permissions");
         if (!(permissionsObj instanceof List<?> permissionsList) || permissionsList.isEmpty()) {
-            return true;
+            return false;
         }
 
         boolean hasReadAccess = false;
