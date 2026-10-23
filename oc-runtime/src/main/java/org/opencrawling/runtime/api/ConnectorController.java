@@ -136,6 +136,30 @@ public class ConnectorController {
             Map.entry("stateDirectory", "data/doxis-state"),
             Map.entry("tenantIsolation", "false")
         )));
+        defaults.add(new ConnectorDTO("SharePoint_Repository", "Microsoft SharePoint Online (Microsoft Graph API)", "repository", "org.opencrawling.sharepoint.SharePointRepositoryConnector", 10, Map.ofEntries(
+            Map.entry("tenantId", ""),
+            Map.entry("clientId", ""),
+            Map.entry("clientSecret", ""),
+            Map.entry("siteUrl", "https://contoso.sharepoint.com/sites/engineering"),
+            Map.entry("driveNames", ""),
+            Map.entry("crawlMode", "delta"),
+            Map.entry("rootFolderPath", "/"),
+            Map.entry("includeSubfolders", "true"),
+            Map.entry("includeContentStream", "true"),
+            Map.entry("maxFileSizeBytes", "52428800"),
+            Map.entry("includeCustomFields", "true"),
+            Map.entry("includeAcls", "true"),
+            Map.entry("userIdentity", "email"),
+            Map.entry("fallbackPrincipals", ""),
+            Map.entry("everyoneExceptExternalIdentity", ""),
+            Map.entry("organizationLinkIdentity", ""),
+            Map.entry("incremental", "true"),
+            Map.entry("stateDirectory", "data/sharepoint-state"),
+            Map.entry("batchSize", "100"),
+            Map.entry("parallelism", "4"),
+            Map.entry("maxRetries", "5"),
+            Map.entry("timeoutSeconds", "30")
+        )));
         defaults.add(new ConnectorDTO("Grpc_Push_Connector", "gRPC Push Streaming Ingestion", "repository", "org.opencrawling.push.grpc.GrpcPushRepositoryConnector", 100, Map.of(
             "port", "9096",
             "maxMessageSizeMb", "64",

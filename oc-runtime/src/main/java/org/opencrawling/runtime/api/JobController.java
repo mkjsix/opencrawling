@@ -311,6 +311,13 @@ public class JobController {
                         resolvedConnector = new org.opencrawling.doxis.DoxisRepositoryConnector(doxisSettings);
                         log.info("Successfully resolved dynamic Doxis repository connector for '{}' (repository '{}', {} mode)",
                                 doxisSettings.url(), doxisSettings.repositoryId(), doxisSettings.crawlMode());
+                    } else if (connConfig.className().contains("SharePointRepositoryConnector")) {
+                        org.opencrawling.sharepoint.SharePointProperties sharePointSettings =
+                                org.opencrawling.sharepoint.SharePointProperties.fromConfiguration(connConfig.configuration());
+                        resolvedConnector = new org.opencrawling.sharepoint.SharePointRepositoryConnector(sharePointSettings);
+                        log.info("Successfully resolved dynamic SharePoint repository connector for '{}' ({} mode)",
+                                sharePointSettings.siteUrl() != null ? sharePointSettings.siteUrl() : sharePointSettings.siteId(),
+                                sharePointSettings.crawlMode());
                     } else if (connConfig.className().contains("Jdbc")) {
                         String url = connConfig.configuration().getOrDefault("url", "jdbc:h2:mem:opencrawling;DB_CLOSE_DELAY=-1");
                         String driverClassName = connConfig.configuration().getOrDefault("driverClassName", connConfig.configuration().getOrDefault("driver-class-name", ""));

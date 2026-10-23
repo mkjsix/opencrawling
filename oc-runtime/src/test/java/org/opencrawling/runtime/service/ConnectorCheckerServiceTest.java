@@ -15,8 +15,13 @@
  */
 package org.opencrawling.runtime.service;
 
+import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CopyOnWriteArrayList;
 
+import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -118,5 +123,71 @@ class ConnectorCheckerServiceTest {
         ConnectionCheckResult result = checker.check(connector);
         assertFalse(result.success());
         assertTrue(result.message().contains("Failed to connect to CMIS endpoint"));
+    }
+
+    @Test
+    void testCheckSharePointConnectorNotConfigured() {
+        ConnectorDTO connector = new ConnectorDTO("SP_Test", "Test SharePoint", "repository",
+                "org.opencrawling.sharepoint.SharePointRepositoryConnector", 10, Map.of("siteUrl", "https://contoso.sharepoint.com"));
+
+        ConnectionCheckResult result = checker.check(connector);
+        assertFalse(result.success());
+        assertTrue(result.message().contains("tenant-id"));
+    }
+
+    @Test
+    void testCheckSharePointConnectorFailure() {
+        ConnectorDTO connector = new ConnectorDTO("SP_Test", "Test SharePoint", "repository",
+                "org.opencrawling.sharepoint.SharePointRepositoryConnector", 10, Map.of("tenantId", "t", "clientId", "c",
+                        "clientSecret", "s3cret", "siteUrl", "https://contoso.sharepoint.com/sites/x",
+                        "authorityUrl", "http://127.0.0.1:59999", "graphUrl", "http://127.0.0.1:59999/v1.0", "maxRetries", "0"));
+
+        ConnectionCheckResult result = checker.check(connector);
+        assertFalse(result.success());
+        assertTrue(result.message().contains("Failed to connect to SharePoint"));
+        assertFalse(result.message().contains("s3cret"));
+    }
+
+    @Test
+    void testCheckSharePointConnectorSuccess() throws Exception {
+        List<String> requests = new CopyOnWriteArrayList<>();
+        HttpServer graph = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        graph.createContext("/", exchange -> {
+            String key = exchange.getRequestMethod() + " " + exchange.getRequestURI().getPath();
+            requests.add(key);
+            String body = switch (key) {
+                case "POST /t/oauth2/v2.0/token" -> "{\"access_token\":\"tok\",\"expires_in\":3599}";
+                case "GET /v1.0/sites/contoso.sharepoint.com:/sites/engineering" ->
+                        "{\"id\":\"contoso.sharepoint.com,a,b\",\"displayName\":\"Engineering\"}";
+                case "GET /v1.0/sites/contoso.sharepoint.com,a,b/drives" ->
+                        "{\"value\":[{\"id\":\"b!1\",\"name\":\"Documents\",\"driveType\":\"documentLibrary\"}]}";
+                default -> null;
+            };
+            byte[] bytes = (body == null ? "{}" : body).getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(body == null ? 404 : 200, bytes.length);
+            exchange.getResponseBody().write(bytes);
+            exchange.close();
+        });
+        graph.start();
+        try {
+            String base = "http://127.0.0.1:" + graph.getAddress().getPort();
+            Map<String, String> config = Map.of("tenantId", "t", "clientId", "c", "clientSecret", "s3cret",
+                    "siteUrl", "https://contoso.sharepoint.com/sites/engineering", "authorityUrl", base, "graphUrl", base + "/v1.0");
+            ConnectionCheckResult result = checker.check(new ConnectorDTO("SP_Test", "Test SharePoint", "repository",
+                    "org.opencrawling.sharepoint.SharePointRepositoryConnector", 10, config));
+            assertTrue(result.success(), result.message());
+            assertTrue(result.message().contains("'Engineering' is accessible with 1 document libraries [Documents]"));
+            assertTrue(requests.contains("POST /t/oauth2/v2.0/token"));
+
+            Map<String, String> missing = new java.util.HashMap<>(config);
+            missing.put("driveName", "Contracts");
+            ConnectionCheckResult wrongLibrary = checker.check(new ConnectorDTO("SP_Test", "Test SharePoint", "repository",
+                    "org.opencrawling.sharepoint.SharePointRepositoryConnector", 10, missing));
+            assertFalse(wrongLibrary.success());
+            assertTrue(wrongLibrary.message().contains("[Contracts]"));
+        } finally {
+            graph.stop(0);
+        }
     }
 }

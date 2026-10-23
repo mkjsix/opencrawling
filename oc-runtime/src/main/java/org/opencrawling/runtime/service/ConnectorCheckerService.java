@@ -34,6 +34,9 @@ import com.fasterxml.jackson.databind.JsonNode;
 import org.opencrawling.doxis.DoxisRepositoryConnector;
 import org.opencrawling.doxis.DoxisProperties;
 import org.opencrawling.doxis.client.DoxisClient;
+import org.opencrawling.sharepoint.GraphClient;
+import org.opencrawling.sharepoint.SharePointProperties;
+import org.opencrawling.sharepoint.SharePointRepositoryConnector;
 import org.opencrawling.runtime.api.ConnectorController.ConnectorDTO;
 import org.springframework.stereotype.Service;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -123,6 +126,11 @@ public class ConnectorCheckerService {
             // --- Doxis Repository Connector ---
             if (className.contains("DoxisRepositoryConnector")) {
                 return checkDoxisRepository(config);
+            }
+
+            // --- SharePoint Repository Connector ---
+            if (className.contains("SharePointRepositoryConnector")) {
+                return checkSharePointRepository(config);
             }
 
             // --- CMIS Repository Connector ---
@@ -497,6 +505,42 @@ public class ConnectorCheckerService {
         } catch (Exception e) {
             return new ConnectionCheckResult(false, "Failed to connect to Doxis at " + settings.url() + ": " + e.getMessage() + " "
                     + DoxisRepositoryConnector.LICENCE_NOTICE, e.toString());
+        }
+    }
+
+    /**
+     * Acquires an app-only token, resolves the site and lists its document libraries: proves the app registration, its
+     * secret and its Sites.Read.All / Sites.Selected access in one go.
+     */
+    private ConnectionCheckResult checkSharePointRepository(Map<String, String> config) {
+        SharePointProperties settings = SharePointProperties.fromConfiguration(config);
+        List<String> problems = settings.validate();
+        if (!problems.isEmpty()) {
+            return new ConnectionCheckResult(false, "SharePoint repository connector is not configured: " + String.join(" ", problems)
+                    + " " + SharePointRepositoryConnector.PREREQUISITES_NOTICE, null);
+        }
+        try {
+            GraphClient client = new GraphClient(settings);
+            JsonNode site = settings.siteId() != null ? client.getSite(settings.siteId())
+                    : client.getSiteByPath(settings.hostname(), settings.sitePath());
+            List<String> libraries = client.listDrives(site.path("id").asText()).stream()
+                    .filter(d -> "documentLibrary".equalsIgnoreCase(d.path("driveType").asText("documentLibrary")))
+                    .map(d -> d.path("name").asText()).toList();
+            List<String> missing = settings.driveNames().stream()
+                    .filter(name -> libraries.stream().noneMatch(l -> l.equalsIgnoreCase(name))).toList();
+            if (!missing.isEmpty()) {
+                return new ConnectionCheckResult(false, "Connected to SharePoint site '" + site.path("displayName").asText()
+                        + "', but it has no document library named " + missing + "; it has " + libraries + ".", null);
+            }
+            return new ConnectionCheckResult(true, "Successfully authenticated to Microsoft Graph; SharePoint site '"
+                    + site.path("displayName").asText(site.path("webUrl").asText()) + "' is accessible with " + libraries.size()
+                    + " document libraries " + libraries + ".", site.path("id").asText(null));
+        } catch (Exception e) {
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+            return new ConnectionCheckResult(false, "Failed to connect to SharePoint through " + settings.graphUrl() + ": "
+                    + e.getMessage() + " " + SharePointRepositoryConnector.PREREQUISITES_NOTICE, e.toString());
         }
     }
 

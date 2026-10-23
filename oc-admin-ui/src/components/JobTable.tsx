@@ -366,6 +366,12 @@ export default function JobTable({ setActiveView }: JobTableProps) {
           placeholder: "e.g. /Company Home/Sites, -root-, or TYPE:'cm:content' AND PATH:'/app:company_home//*'",
           description: "Scanning entry point. Provide a folder path, node UUID, or full AFTS search query (e.g. TYPE:'cm:content')."
         };
+      case 'org.opencrawling.sharepoint.SharePointRepositoryConnector':
+        return {
+          label: 'Root Folder Path',
+          placeholder: 'e.g. default, or /Specs/2026',
+          description: 'Use default for the connector configuration. A folder path runs a one-off (non-incremental) tree crawl of that folder in every selected library.'
+        };
       case 'org.opencrawling.doxis.DoxisRepositoryConnector':
         return {
           label: 'CQL Statement / E-File ID',
