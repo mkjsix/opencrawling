@@ -635,6 +635,85 @@ This spins up the entire backing infrastructure (Postgres, Redis, Kafka, Ollama,
 
 ---
 
+### Option A.2.c: Fast Local Development Builds & `oc-maven-builder` (Local Maven Cache `~/.m2`)
+
+In CI workflows (GitHub Actions), container images are built from scratch to guarantee clean, hermetic builds. However, for local development, downloading all dependencies repeatedly across multi-service builds (`oc-crawler`, `oc-ingestion-consumer`, `oc-embedding-consumer`, `oc-writer-consumer`, `oc-mcp-server`) creates significant network overhead.
+
+To improve the local development experience, OpenCrawling provides dedicated local configurations that preserve the CI Dockerfiles untouched while leveraging the developer's local Maven repository cache (`<USER_HOME>/.m2`).
+
+#### 1. The `oc-maven-builder` Service (Host `~/.m2` Volume Mount)
+
+The `oc-maven-builder` service (defined in `docker-compose-maven-builder.yml` and included across local compose files) runs the official `maven:3-eclipse-temurin-25` container with two crucial volume mounts:
+* **Host Maven Cache Mount (`${HOME}/.m2:/root/.m2`)**: Any dependency downloaded by Maven is stored directly on your host machine's `~/.m2` folder. Existing dependencies on your machine are reused immediately with zero download time.
+* **Workspace Mount (`.:/app`)**: Compiles and outputs JAR artifacts (`target/*.jar`) directly into your host workspace.
+* **Zero-Host-Prerequisites**: Developers do not need JDK 25 or Maven installed on their host machine; builds execute inside the exact containerized Java 25 environment.
+* **Docker Compose Profile (`profiles: ["build"]`)**: It is marked with `profiles: ["build"]`, so it never starts as an unwanted background daemon during `docker compose up -d`. It only runs on-demand when called with `run --rm`.
+
+#### 2. Usage with Decoupled Pipeline Stack
+
+To compile and launch the decoupled microservices:
+
+```bash
+# 1. Compile all project modules using host ~/.m2
+docker compose -f docker-compose-decoupled-local.yml run --rm oc-maven-builder
+
+# 2. Start the decoupled microservices
+docker compose -f docker-compose-decoupled-local.yml up -d
+```
+
+You can also use the local override on top of `docker-compose-decoupled.yml`:
+```bash
+docker compose -f docker-compose-decoupled.yml -f docker-compose-decoupled.local.yml up -d --build
+```
+
+#### 3. Usage with Monolith Apps Stack (Backend + UI)
+
+```bash
+# 1. Compile modules using host ~/.m2
+docker compose -f docker-compose-apps-local.yml run --rm oc-maven-builder
+
+# 2. Start the backend, embedding service, and React UI
+docker compose -f docker-compose-apps-local.yml up -d
+```
+
+#### 4. Usage with Any Specialized Connector Stack
+
+Because `docker-compose-maven-builder.yml` is located at the root of the repository, it can be used to compile artifacts before launching any specialized connector compose stack (Vespa, Solr, Luxir, Milvus, Qdrant, SeaTunnel, Ozone):
+
+```bash
+# 1. Compile project modules
+docker compose -f docker-compose-maven-builder.yml run --rm oc-maven-builder
+
+# 2. Launch the target connector stack (e.g. Vespa)
+docker compose -f oc-vespa-output-connector/docker/docker-compose-decoupled-with-vespa.yml up -d
+```
+
+#### 5. Running Custom Maven Goals and Module Testing
+
+You can pass arbitrary Maven commands to `oc-maven-builder`:
+
+```bash
+# Run unit tests for oc-runtime only
+docker compose -f docker-compose-maven-builder.yml run --rm oc-maven-builder mvn test -pl oc-runtime
+
+# Fast offline build (skipping remote dependency repository lookups)
+docker compose -f docker-compose-maven-builder.yml run --rm oc-maven-builder mvn clean package -o -DskipTests
+
+# Inspect connector dependency tree
+docker compose -f docker-compose-maven-builder.yml run --rm oc-maven-builder mvn dependency:tree -pl oc-vector-output-connector
+```
+
+#### 6. Transparent Fast Builds for Existing Integration Test Scripts
+
+To run integration test scripts under `scripts/` using the fast local cache Dockerfiles without modifying any script file:
+
+```bash
+export COMPOSE_FILE="docker-compose-decoupled.yml:docker-compose-decoupled.local.yml"
+./scripts/test-ois-ingest-decoupled.sh
+```
+
+---
+
 ### Option A.3: Quick Start with Released Containers (Pre-built Release Distribution from GHCR)
 
 To run the complete decoupled pipeline using the official pre-built release containers from the GitHub Container Registry (without building the services locally):
