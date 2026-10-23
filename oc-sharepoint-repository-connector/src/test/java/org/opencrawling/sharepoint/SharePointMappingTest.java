@@ -134,6 +134,32 @@ class SharePointMappingTest {
     }
 
     @Test
+    void personsAreIdentifiedFromBothFacetsNeverByDisplayName() throws Exception {
+        // the shape of Microsoft's documented permissions: an Entra user with id only, beside a site user whose
+        // loginName is the display name rather than a claim
+        SharePointSecurityMapper.Mapped documented = mapper(Map.of()).map(List.of(json("{\"roles\":[\"write\"],\"grantedToV2\":{"
+                + "\"user\":{\"id\":\"9A1B2C3D-0000-4000-8000-0000000000AA\",\"displayName\":\"Nestor Wilke\"},"
+                + "\"siteUser\":{\"id\":\"14\",\"displayName\":\"Nestor Wilke\",\"loginName\":\"Nestor Wilke\"}}}")));
+        assertEquals(List.of("9a1b2c3d-0000-4000-8000-0000000000aa"), identities(documented),
+                "the object id, never the display name or SharePoint's numeric site user id");
+        // a membership claim beside the Entra user: the e-mail and the object id, so a caller can match by either
+        SharePointSecurityMapper.Mapped both = mapper(Map.of()).map(List.of(json("{\"roles\":[\"read\"],\"grantedToV2\":{"
+                + "\"user\":{\"id\":\"OID-1\",\"displayName\":\"Lee Gu\"},"
+                + "\"siteUser\":{\"id\":\"9\",\"loginName\":\"i:0#.f|membership|Lee.Gu@contoso.com\"}}}")));
+        assertEquals(List.of("lee.gu@contoso.com", "oid-1"), identities(both));
+        SharePointSecurityMapper.Mapped byId = mapper(Map.of("userIdentity", "id")).map(List.of(json("{\"roles\":[\"read\"],\"grantedToV2\":{"
+                + "\"user\":{\"id\":\"OID-1\"},\"siteUser\":{\"loginName\":\"i:0#.f|membership|lee.gu@contoso.com\"}}}")));
+        assertEquals(List.of("oid-1"), identities(byId));
+        // a site user alone, with nothing but a display name: nobody can be identified, so nothing is granted
+        assertTrue(mapper(Map.of()).map(List.of(json("{\"roles\":[\"read\"],\"grantedToV2\":{\"siteUser\":"
+                + "{\"id\":\"3\",\"loginName\":\"Nestor Wilke\"}}}"))).security().permissions().isEmpty());
+        // a group claim in siteUser stays a group, whatever the user facet says
+        SharePointSecurityMapper.Mapped claim = mapper(Map.of()).map(List.of(json("{\"roles\":[\"read\"],\"grantedToV2\":{"
+                + "\"siteUser\":{\"loginName\":\"c:0t.c|tenant|SEC-GROUP\"}}}")));
+        assertEquals(List.of("sec-group"), identities(claim));
+    }
+
+    @Test
     void deprecatedFieldsAreReadOnlyWithoutV2() throws Exception {
         SharePointSecurityMapper.Mapped v1 = mapper(Map.of()).map(List.of(
                 json("{\"roles\":[\"read\"],\"grantedTo\":{\"user\":{\"email\":\"a@contoso.com\"}}}")));

@@ -17,6 +17,8 @@ package org.opencrawling.sharepoint;
 
 import com.fasterxml.jackson.databind.JsonNode;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 
@@ -120,8 +122,45 @@ public final class SharePointPrincipals {
         if (lower.startsWith(USER_CLAIM_PREFIX)) {
             return user(siteUser);
         }
-        // other claim types (Windows accounts, other providers) are kept verbatim so they can still be matched
-        return Optional.of(new Principal(lower, "user", name));
+        if (lower.contains("|")) {
+            // other claim types (Windows accounts, other providers) are kept verbatim so they can still be matched
+            return Optional.of(new Principal(lower, "user", name));
+        }
+        // not a claim: Microsoft's documented examples carry the person's display name here, which identifies nobody
+        return Optional.ofNullable(fromLoginName(login)).map(mail -> new Principal(mail.toLowerCase(Locale.ROOT), "user", name));
+    }
+
+    /** Whether a {@code siteUser} stands for a person (a membership claim, or no claim at all) rather than a group claim. */
+    static boolean isPerson(JsonNode siteUser) {
+        String login = GraphClient.text(siteUser, "loginName");
+        return login == null || login.toLowerCase(Locale.ROOT).startsWith(USER_CLAIM_PREFIX) || !login.contains("|");
+    }
+
+    /**
+     * A person granted through an identity set, from both of its facets: the e-mail / UPN comes from the {@code siteUser}
+     * membership claim or from the {@code user} facet, the Entra object id from {@code user.id}. SharePoint's own numeric
+     * {@code siteUser.id} and a {@code loginName} that isn't a claim are never used. With {@code user-identity: email} the
+     * person gets both identifiers when both are known, so a caller matches by either; Microsoft's documented permissions
+     * often carry only the object id. With {@code id}, the object id alone (the e-mail when there's no id).
+     */
+    public List<Principal> person(JsonNode siteUser, JsonNode user) {
+        String name = firstNonBlank(user.path("displayName").asText(null), siteUser.path("displayName").asText(null));
+        String email = firstNonBlank(fromLoginName(GraphClient.text(siteUser, "loginName")), GraphClient.text(user, "email"),
+                GraphClient.text(user, "userPrincipalName"), fromLoginName(GraphClient.text(user, "loginName")),
+                GraphClient.text(siteUser, "email"));
+        String id = GraphClient.text(user, "id");
+        List<Principal> out = new ArrayList<>(2);
+        if (settings.userIdentity() == SharePointProperties.UserIdentity.ID && id != null) {
+            out.add(new Principal(id.toLowerCase(Locale.ROOT), "user", name));
+            return out;
+        }
+        if (email != null) {
+            out.add(new Principal(email.toLowerCase(Locale.ROOT), "user", name));
+        }
+        if (id != null) {
+            out.add(new Principal(id.toLowerCase(Locale.ROOT), "user", name));
+        }
+        return out;
     }
 
     /** The configured identity for a broad claim (everyone, organization or anonymous links); nothing when not configured. */

@@ -28,6 +28,7 @@ import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -99,6 +100,23 @@ class GraphClientTest {
     }
 
     @Test
+    void retryAfterZeroNeverBecomesABurstOfRetries() throws Exception {
+        // what a client hears when it came back a little early: Retry-After rounded down to 0
+        AtomicInteger calls = new AtomicInteger();
+        List<Long> at = new java.util.concurrent.CopyOnWriteArrayList<>();
+        graph.routes.put("GET /v1.0/drives/d", r -> {
+            at.add(System.nanoTime());
+            return calls.incrementAndGet() <= 2 ? new MockResponse().setResponseCode(429).setHeader("Retry-After", "0")
+                    : new MockResponse().setResponseCode(200).setBody("{\"id\":\"d\"}");
+        });
+        assertEquals("d", client(Map.of()).getDrive("d").path("id").asText());
+        assertEquals(3, calls.get());
+        for (int i = 1; i < at.size(); i++) {
+            assertTrue(at.get(i) - at.get(i - 1) >= 950_000_000L, "a retry after Retry-After: 0 still waits about a second");
+        }
+    }
+
+    @Test
     void giveUpAfterMaxRetriesWithGraphsErrorCode() {
         graph.routes.put("GET /v1.0/drives/d", r -> new MockResponse().setResponseCode(503)
                 .setBody("{\"error\":{\"code\":\"serviceNotAvailable\",\"message\":\"Try later\"}}"));
@@ -106,6 +124,17 @@ class GraphClientTest {
         assertEquals(503, e.status());
         assertEquals("serviceNotAvailable", e.code());
         assertEquals(2, graph.count("GET /v1.0/drives/d"));
+    }
+
+    @Test
+    void everyGraphRequestCarriesAClientRequestIdAndErrorsNameGraphsIds() throws Exception {
+        graph.routes.put("GET /v1.0/drives/d", r -> new MockResponse().setResponseCode(404).setBody("{\"error\":{\"code\":\"itemNotFound\","
+                + "\"message\":\"The resource could not be found.\",\"innerError\":{\"request-id\":\"rid-1\",\"client-request-id\":\""
+                + r.getHeader("client-request-id") + "\"}}}"));
+        GraphApiException e = assertThrows(GraphApiException.class, () -> client(Map.of()).getDrive("d"));
+        String sent = graph.request("GET /v1.0/drives/d").getHeader("client-request-id");
+        assertDoesNotThrow(() -> java.util.UUID.fromString(sent));
+        assertTrue(e.getMessage().contains("request-id rid-1, client-request-id " + sent), e.getMessage());
     }
 
     @Test

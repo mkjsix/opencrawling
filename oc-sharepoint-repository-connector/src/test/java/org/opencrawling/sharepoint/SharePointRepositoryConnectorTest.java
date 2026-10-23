@@ -140,7 +140,8 @@ class SharePointRepositoryConnectorTest {
         assertFalse(m.containsKey("sharepoint_field_FileLeafRef") || m.containsKey("sharepoint_field__UIVersionString")
                 || m.containsKey("sharepoint_field_ContentType"), "system columns are skipped");
 
-        assertEquals(List.of("adele.vance@contoso.com", "megan.bowen@contoso.com", "5f0c1a2b-m365"), rules(spec, "read"));
+        assertEquals(List.of("adele.vance@contoso.com", "megan.bowen@contoso.com", "u-megan", "5f0c1a2b-m365"), rules(spec, "read"),
+                "a person with a known Entra object id is also granted by that id");
         assertEquals(List.of("0d1e6b2a-eng", "sharepoint-group:" + MockGraph.SITE_ID + ":3"), rules(spec, "write"));
         assertTrue(spec.security().permissions().stream().noneMatch(r -> r.identity().equals("public")),
                 "everyone-except-external, organization and anonymous links grant nothing unless configured");

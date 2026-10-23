@@ -122,11 +122,13 @@ public class SharePointSecurityMapper {
     }
 
     private void addIdentitySet(JsonNode set, List<SharePointPrincipals.Principal> out) {
-        // the most specific facet wins: a site user's claim says more than the Entra user beside it
-        if (set.path("siteUser").isObject()) {
-            principals.siteUser(set.path("siteUser")).ifPresent(out::add);
-        } else if (set.path("user").isObject()) {
-            principals.user(set.path("user")).ifPresent(out::add);
+        // a site user is either a claim for a group or for everybody, or a person described by both facets
+        JsonNode siteUser = set.path("siteUser");
+        JsonNode user = set.path("user");
+        if (siteUser.isObject() && !SharePointPrincipals.isPerson(siteUser)) {
+            principals.siteUser(siteUser).ifPresent(out::add);
+        } else if (siteUser.isObject() || user.isObject()) {
+            out.addAll(principals.person(siteUser, user));
         }
         if (set.path("sharePointGroup").isObject()) {
             principals.siteGroup(set.path("sharePointGroup")).ifPresent(out::add);

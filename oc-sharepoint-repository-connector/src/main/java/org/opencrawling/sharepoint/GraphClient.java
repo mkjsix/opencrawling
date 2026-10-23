@@ -49,7 +49,10 @@ import java.util.concurrent.ThreadLocalRandom;
  * <ul>
  *   <li>The access token is cached and renewed shortly before it expires; a 401 renews it once.</li>
  *   <li>429, 503 and 504 honour {@code Retry-After} (seconds or an HTTP date) through one gate shared by every thread, as
- *       Microsoft asks of multi-threaded clients; without the header the back-off grows exponentially with jitter.</li>
+ *       Microsoft asks of multi-threaded clients. The header is a floor, not a moment: it is whole seconds and may be
+ *       rounded down (Microsoft Dev Proxy's throttling plugins truncate it), so the client waits one second more, and never
+ *       less than the exponential back-off with jitter it uses without the header. A {@code Retry-After: 0} therefore
+ *       can't turn into a burst of immediate retries.</li>
  *   <li>The bearer token is only ever sent to the Graph host, also when following {@code @odata.nextLink} /
  *       {@code @odata.deltaLink}. Redirects are not followed automatically; a download redirect is followed without
  *       credentials, and {@code @microsoft.graph.downloadUrl} is pre-authenticated and called without them.</li>
@@ -306,8 +309,9 @@ public class GraphClient {
     }
 
     private static HttpRequest request(URI uri, String token) {
+        // client-request-id: Microsoft asks for a GUID per request so that its support can trace a failing call
         return HttpRequest.newBuilder(uri).header("Authorization", "Bearer " + token).header("Accept", "application/json")
-                .header("User-Agent", USER_AGENT).GET().build();
+                .header("User-Agent", USER_AGENT).header("client-request-id", java.util.UUID.randomUUID().toString()).GET().build();
     }
 
     private <T> HttpResponse<T> sendWithRetries(HttpRequest request, HttpResponse.BodyHandler<T> handler)
@@ -318,7 +322,7 @@ public class GraphClient {
                 HttpResponse<T> response = send(request, handler);
                 int status = response.statusCode();
                 if ((status == 429 || status == 503 || status == 504) && attempt < settings.maxRetries()) {
-                    Duration wait = retryAfter(response).orElse(backoff(attempt));
+                    Duration wait = waitAfter(response, attempt);
                     throttledUntil = later(throttledUntil, clock.instant().plus(wait));
                     log.info("Graph answered HTTP {}; pausing all requests for {} ms (attempt {} of {}).", status,
                             wait.toMillis(), attempt + 1, settings.maxRetries());
@@ -346,6 +350,12 @@ public class GraphClient {
         if (!wait.isNegative() && !wait.isZero()) {
             Thread.sleep(wait.toMillis());
         }
+    }
+
+    /** How long to pause after a throttled or unavailable answer: {@code Retry-After} plus a second, at least the back-off. */
+    Duration waitAfter(HttpResponse<?> response, int attempt) {
+        Duration backoff = backoff(attempt);
+        return retryAfter(response).map(d -> d.plusSeconds(1)).filter(d -> d.compareTo(backoff) > 0).orElse(backoff);
     }
 
     /** {@code Retry-After} as seconds or an HTTP date. */
@@ -385,6 +395,12 @@ public class GraphClient {
             if (error.isObject()) {
                 code = text(error, "code");
                 message = error.path("message").asText(message);
+                JsonNode inner = error.path("innerError");
+                String requestId = text(inner, "request-id");
+                if (requestId != null) {
+                    message = firstLine(message) + " (request-id " + requestId
+                            + (text(inner, "client-request-id") != null ? ", client-request-id " + text(inner, "client-request-id") : "") + ")";
+                }
             }
         } catch (IOException ignored) {
             // not JSON: keep the start of the body
