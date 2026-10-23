@@ -122,6 +122,9 @@ const getConnectorIconInfo = (className: string) => {
   if (className.includes('LDAP')) {
     return { icon: Key, color: 'text-teal-400', bg: 'bg-teal-400/10', border: 'border-teal-500/20' }
   }
+  if (className.includes('openarch') || className.includes('OpenArch')) {
+    return { icon: Layers, color: 'text-indigo-400', bg: 'bg-indigo-400/10', border: 'border-indigo-500/20' }
+  }
   return { icon: Plug2, color: 'text-muted-foreground', bg: 'bg-muted-foreground/10', border: 'border-muted-foreground/20' }
 }
 
@@ -153,6 +156,7 @@ export default function ConnectorForm() {
   const vespaEndpointValue = watch('configuration.vespaEndpoint')
   const solrMode = watch('configuration.solrMode') || 'standalone'
   const doxisAuthType = watch('configuration.authType') || 'basic'
+  const openarchCrawlMode = watch('configuration.crawlMode') || 'QUERY'
 
   const fetchConnectors = async () => {
     setIsLoading(true)
@@ -249,6 +253,7 @@ export default function ConnectorForm() {
       { label: 'Doxis Repository (Intelligent Content Automation)', value: 'org.opencrawling.doxis.DoxisRepositoryConnector' },
       { label: 'Relational Database (JDBC)', value: 'org.opencrawling.jdbc.JdbcRepositoryConnector' },
       { label: 'gRPC Push Ingestion Connector', value: 'org.opencrawling.push.grpc.GrpcPushRepositoryConnector' },
+      { label: 'Hyland OpenArch Federated Repository', value: 'org.opencrawling.openarch.repository.OpenArchRepositoryConnector' },
     ],
     transformation: [
       { label: 'Ollama Embedding', value: 'org.opencrawling.embedding.OllamaEmbeddingConnector' },
@@ -265,6 +270,7 @@ export default function ConnectorForm() {
       { label: 'Luxir Hybrid Search Store', value: 'org.opencrawling.luxir.LuxirOutputConnector' },
       { label: 'Apache SeaTunnel Distributed Fan-Out', value: 'org.opencrawling.seatunnel.SeaTunnelOutputConnector' },
       { label: 'Apache Ozone (Migration Mode only)', value: 'org.opencrawling.ozone.OzoneOutputConnector' },
+      { label: 'Hyland OpenArch Federated Ingestion & Parquet Vector Bridge', value: 'org.opencrawling.openarch.output.OpenArchOutputConnector' },
     ],
     authority: [
       { label: 'Active Directory', value: 'org.opencrawling.authorities.authorities.activedirectory.ActiveDirectoryAuthority' },
@@ -2016,6 +2022,170 @@ export default function ConnectorForm() {
                     </div>
                   )}
 
+                  {/* Hyland OpenArch Federated Repository Connector */}
+                  {selectedClass === 'org.opencrawling.openarch.repository.OpenArchRepositoryConnector' && (
+                    <div className="space-y-4 font-sans text-foreground">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-2 col-span-2">
+                          <label className="text-sm font-medium">OpenArch Endpoint URL</label>
+                          <input 
+                            {...register('configuration.endpointUrl', { required: true })}
+                            placeholder="http://localhost:8080"
+                            defaultValue="http://localhost:8080"
+                            className="w-full bg-background border border-border rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-primary/50 outline-none font-mono"
+                          />
+                        </div>
+
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium">Repository ID</label>
+                          <input 
+                            {...register('configuration.repositoryId')}
+                            defaultValue="default"
+                            placeholder="default"
+                            className="w-full bg-background border border-border rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-primary/50 outline-none font-mono"
+                          />
+                        </div>
+
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium">Crawl Mode</label>
+                          <select 
+                            {...register('configuration.crawlMode')}
+                            defaultValue="QUERY"
+                            className="w-full bg-background border border-border rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-primary/50 outline-none"
+                          >
+                            <option value="QUERY">HXQL Query Mode</option>
+                            <option value="FOLDER">Folder Hierarchy Mode</option>
+                          </select>
+                        </div>
+
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium">Username</label>
+                          <input 
+                            {...register('configuration.username')}
+                            defaultValue="Administrator"
+                            placeholder="Administrator"
+                            className="w-full bg-background border border-border rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-primary/50 outline-none"
+                          />
+                        </div>
+
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium">Password</label>
+                          <input 
+                            type="password"
+                            {...register('configuration.password')}
+                            defaultValue="Administrator"
+                            placeholder="Administrator"
+                            className="w-full bg-background border border-border rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-primary/50 outline-none font-mono"
+                          />
+                        </div>
+
+                        {openarchCrawlMode === 'QUERY' ? (
+                          <div className="space-y-2 col-span-2">
+                            <label className="text-sm font-medium">HXQL Query</label>
+                            <input 
+                              {...register('configuration.hxqlQuery')}
+                              defaultValue="SELECT * FROM SysFile"
+                              placeholder="SELECT * FROM SysFile"
+                              className="w-full bg-background border border-border rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-primary/50 outline-none font-mono"
+                            />
+                          </div>
+                        ) : (
+                          <>
+                            <div className="space-y-2">
+                              <label className="text-sm font-medium">Root Folder ID</label>
+                              <input 
+                                {...register('configuration.rootFolderId')}
+                                defaultValue="00000000-0000-0000-0000-000000000000"
+                                placeholder="00000000-0000-0000-0000-000000000000"
+                                className="w-full bg-background border border-border rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-primary/50 outline-none font-mono"
+                              />
+                            </div>
+                            <div className="space-y-2 flex items-center pt-6">
+                              <label className="flex items-center gap-2 cursor-pointer text-sm font-medium">
+                                <input 
+                                  type="checkbox"
+                                  {...register('configuration.includeSubfolders')}
+                                  defaultChecked={true}
+                                  className="rounded border-border text-primary focus:ring-primary w-4 h-4 bg-background"
+                                />
+                                Include Subfolders Recursively
+                              </label>
+                            </div>
+                          </>
+                        )}
+
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium">Batch Size (Pages)</label>
+                          <input 
+                            type="number"
+                            {...register('configuration.batchSize')}
+                            defaultValue={100}
+                            placeholder="100"
+                            className="w-full bg-background border border-border rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-primary/50 outline-none font-mono"
+                          />
+                        </div>
+
+                        <div className="space-y-2 flex items-center pt-6">
+                          <label className="flex items-center gap-2 cursor-pointer text-sm font-medium">
+                            <input 
+                              type="checkbox"
+                              {...register('configuration.incremental')}
+                              defaultChecked={false}
+                              className="rounded border-border text-primary focus:ring-primary w-4 h-4 bg-background"
+                            />
+                            Incremental Crawling (sys_modified filtering)
+                          </label>
+                        </div>
+
+                        <div className="space-y-2 flex items-center pt-2">
+                          <label className="flex items-center gap-2 cursor-pointer text-sm font-medium">
+                            <input 
+                              type="checkbox"
+                              {...register('configuration.includeAcls')}
+                              defaultChecked={true}
+                              className="rounded border-border text-primary focus:ring-primary w-4 h-4 bg-background"
+                            />
+                            Extract &amp; Map Zero-Trust ACLs
+                          </label>
+                        </div>
+
+                        <div className="space-y-2 flex items-center pt-2">
+                          <label className="flex items-center gap-2 cursor-pointer text-sm font-medium">
+                            <input 
+                              type="checkbox"
+                              {...register('configuration.includeContentStream')}
+                              defaultChecked={true}
+                              className="rounded border-border text-primary focus:ring-primary w-4 h-4 bg-background"
+                            />
+                            Stream Binary Blobs (/api/download)
+                          </label>
+                        </div>
+
+                        <div className="col-span-2 p-3 bg-indigo-500/10 border border-indigo-500/20 rounded-md text-xs text-indigo-300 flex items-start gap-2">
+                          <Layers className="w-4 h-4 flex-shrink-0 mt-0.5 text-indigo-400" />
+                          <div>
+                            <p className="font-semibold text-indigo-200">Hyland OpenArch Federated Source</p>
+                            <p className="mt-0.5 opacity-90">
+                              Harvesters query OpenArch repository records via HXQL or folder traversal, preserving Zero-Trust ACLs and offloading binaries via Java 25 Virtual Threads.
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="col-span-2 flex justify-end">
+                          <button
+                            type="button"
+                            onClick={handleCheckConnection}
+                            disabled={isCheckingConnection}
+                            className="btn-secondary flex items-center gap-2 text-xs py-1.5 px-3 border border-indigo-500/30 text-indigo-300 hover:bg-indigo-500/10"
+                          >
+                            {isCheckingConnection ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ShieldCheck className="w-3.5 h-3.5 text-indigo-400" />}
+                            Test OpenArch Connectivity
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   {/* PGVector Store */}
                   {selectedClass === 'org.opencrawling.vector.VectorOutputConnector' && (
                     <div className="space-y-4 font-sans text-foreground">
@@ -2891,6 +3061,154 @@ export default function ConnectorForm() {
                             <option value="DELETE_KEY">DELETE_KEY (purge binary + sidecar)</option>
                             <option value="ARCHIVE_TOMBSTONE">ARCHIVE_TOMBSTONE (purge + keep OIS tombstone)</option>
                           </select>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Hyland OpenArch Output Connector */}
+                  {selectedClass === 'org.opencrawling.openarch.output.OpenArchOutputConnector' && (
+                    <div className="space-y-4 font-sans text-foreground">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-2 col-span-2">
+                          <label className="text-sm font-medium">OpenArch Endpoint URL</label>
+                          <input 
+                            {...register('configuration.endpointUrl', { required: true })}
+                            placeholder="http://localhost:8080"
+                            defaultValue="http://localhost:8080"
+                            className="w-full bg-background border border-border rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-primary/50 outline-none font-mono"
+                          />
+                        </div>
+
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium">Repository ID</label>
+                          <input 
+                            {...register('configuration.repositoryId')}
+                            defaultValue="default"
+                            placeholder="default"
+                            className="w-full bg-background border border-border rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-primary/50 outline-none font-mono"
+                          />
+                        </div>
+
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium">Target Root Folder ID</label>
+                          <input 
+                            {...register('configuration.rootFolderId')}
+                            defaultValue="00000000-0000-0000-0000-000000000000"
+                            placeholder="00000000-0000-0000-0000-000000000000"
+                            className="w-full bg-background border border-border rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-primary/50 outline-none font-mono"
+                          />
+                        </div>
+
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium">Username</label>
+                          <input 
+                            {...register('configuration.username')}
+                            defaultValue="Administrator"
+                            placeholder="Administrator"
+                            className="w-full bg-background border border-border rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-primary/50 outline-none"
+                          />
+                        </div>
+
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium">Password</label>
+                          <input 
+                            type="password"
+                            {...register('configuration.password')}
+                            defaultValue="Administrator"
+                            placeholder="Administrator"
+                            className="w-full bg-background border border-border rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-primary/50 outline-none font-mono"
+                          />
+                        </div>
+
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium">Parquet Vector Batch Threshold</label>
+                          <input 
+                            type="number"
+                            {...register('configuration.parquetBatchThreshold')}
+                            defaultValue={50}
+                            placeholder="50"
+                            className="w-full bg-background border border-border rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-primary/50 outline-none font-mono"
+                          />
+                        </div>
+
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium">Embeddings Model Name / Type</label>
+                          <input 
+                            {...register('configuration.embeddingsType')}
+                            defaultValue="mxbai-embed-large"
+                            placeholder="mxbai-embed-large"
+                            className="w-full bg-background border border-border rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-primary/50 outline-none font-mono"
+                          />
+                        </div>
+
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium">Embedding Vector Dimensions</label>
+                          <input 
+                            type="number"
+                            {...register('configuration.dimensions')}
+                            defaultValue={1024}
+                            placeholder="1024"
+                            className="w-full bg-background border border-border rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-primary/50 outline-none font-mono"
+                          />
+                        </div>
+
+                        <div className="space-y-2 flex items-center pt-6">
+                          <label className="flex items-center gap-2 cursor-pointer text-sm font-medium">
+                            <input 
+                              type="checkbox"
+                              {...register('configuration.upsert')}
+                              defaultChecked={true}
+                              className="rounded border-border text-primary focus:ring-primary w-4 h-4 bg-background"
+                            />
+                            Upsert (Overwrite Existing Docs)
+                          </label>
+                        </div>
+
+                        <div className="space-y-2 flex items-center pt-2">
+                          <label className="flex items-center gap-2 cursor-pointer text-sm font-medium">
+                            <input 
+                              type="checkbox"
+                              {...register('configuration.syncAcls')}
+                              defaultChecked={true}
+                              className="rounded border-border text-primary focus:ring-primary w-4 h-4 bg-background"
+                            />
+                            Zero-Trust ACL Synchronization
+                          </label>
+                        </div>
+
+                        <div className="space-y-2 flex items-center pt-2">
+                          <label className="flex items-center gap-2 cursor-pointer text-sm font-medium">
+                            <input 
+                              type="checkbox"
+                              {...register('configuration.uploadBinaries')}
+                              defaultChecked={true}
+                              className="rounded border-border text-primary focus:ring-primary w-4 h-4 bg-background"
+                            />
+                            Upload Document Binaries (/api/upload)
+                          </label>
+                        </div>
+
+                        <div className="col-span-2 p-3 bg-indigo-500/10 border border-indigo-500/20 rounded-md text-xs text-indigo-300 flex items-start gap-2">
+                          <Layers className="w-4 h-4 flex-shrink-0 mt-0.5 text-indigo-400" />
+                          <div>
+                            <p className="font-semibold text-indigo-200">Parquet Vector Bridging &amp; OpenArch Indexing</p>
+                            <p className="mt-0.5 opacity-90">
+                              Emits binary embeddings formatted as Apache Parquet files conforming to OpenArch schema (<code className="text-indigo-200">embedding.avsc</code>) and indexes document objects into OpenArch with Zero-Trust permissions.
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="col-span-2 flex justify-end">
+                          <button
+                            type="button"
+                            onClick={handleCheckConnection}
+                            disabled={isCheckingConnection}
+                            className="btn-secondary flex items-center gap-2 text-xs py-1.5 px-3 border border-indigo-500/30 text-indigo-300 hover:bg-indigo-500/10"
+                          >
+                            {isCheckingConnection ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ShieldCheck className="w-3.5 h-3.5 text-indigo-400" />}
+                            Test OpenArch Connectivity
+                          </button>
                         </div>
                       </div>
                     </div>
