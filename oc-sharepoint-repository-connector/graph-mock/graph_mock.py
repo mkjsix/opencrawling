@@ -51,15 +51,18 @@ SEED = int(os.environ.get("GRAPH_SEED", "42"))
 PAGE_SIZE = int(os.environ.get("GRAPH_PAGE_SIZE", "200"))
 TOKEN_SECONDS = int(os.environ.get("GRAPH_TOKEN_SECONDS", "3599"))
 PUBLIC_URL = os.environ.get("GRAPH_PUBLIC_URL", "")  # base URL clients use to reach this server (for links)
+DOWNLOAD_URL = os.environ.get("GRAPH_DOWNLOAD_URL", "")  # base URL of the pre-authenticated download links (SharePoint's host)
+RECORD = os.environ.get("GRAPH_RECORD", "")  # append every token, Graph and download exchange to this JSON-lines file
 QUIET = os.environ.get("GRAPH_QUIET", "false").lower() == "true"
 
 SITE_ID = f"{HOST},7c0e5b0a-1111-4bd8-8f2b-2a8e9a349201,9a3f2c1d-2222-4e8a-9c0f-1a2b3c4d5e6f"
 SITE_URL = f"https://{HOST}{SITE_PATH}"
 
+# user key: display name, e-mail (UPN), SharePoint site user id, Entra object id
 USERS = {
-    "u-adele": ("Adele Vance", "adele.vance@contoso.com", 7),
-    "u-megan": ("Megan Bowen", "megan.bowen@contoso.com", 9),
-    "u-diego": ("Diego Siciliani", "diego.siciliani@contoso.com", 11),
+    "u-adele": ("Adele Vance", "adele.vance@contoso.com", 7, "a1d4e1e0-0000-4000-8000-0000000000a1"),
+    "u-megan": ("Megan Bowen", "megan.bowen@contoso.com", 9, "a1d4e1e0-0000-4000-8000-0000000000a2"),
+    "u-diego": ("Diego Siciliani", "diego.siciliani@contoso.com", 11, "a1d4e1e0-0000-4000-8000-0000000000a3"),
 }
 GROUP_ENG = ("0d1e6b2a-0000-4000-8000-00000000e001", "Engineering-Core-Team")
 SITE_OWNERS = ("3", "Engineering Owners")
@@ -157,10 +160,12 @@ class Tenant:
                 f"Owners review the {topic} guidance every quarter and record decisions in the project log.")
 
     def _permissions(self, i):
+        # Microsoft's documented permissions: an Entra user with id and display name (no e-mail), beside the site user
         def user(u, role="read"):
-            name, email, sp_id = USERS[u]
-            return {"id": f"p-{u}", "roles": [role], "grantedToV2": {"siteUser": {"id": str(sp_id), "displayName": name,
-                                                                                   "loginName": f"i:0#.f|membership|{email}"}}}
+            name, email, sp_id, oid = USERS[u]
+            return {"id": f"p-{u}", "roles": [role], "grantedToV2": {
+                "user": {"id": oid, "displayName": name},
+                "siteUser": {"id": str(sp_id), "displayName": name, "loginName": f"i:0#.f|membership|{email}"}}}
         pattern = i % 6
         if pattern == 0:  # the whole organisation (internal users)
             return [{"id": "p-all", "roles": ["read"], "grantedToV2": {"siteUser": {"id": "11", "displayName": "Everyone except external users",
@@ -171,12 +176,14 @@ class Tenant:
         if pattern == 2:  # site owners (SharePoint group) and a specific-people link
             return [{"id": "p-owners", "roles": ["owner"], "grantedToV2": {"siteGroup": {"id": SITE_OWNERS[0], "displayName": SITE_OWNERS[1]}}},
                     {"id": "p-link-users", "roles": ["read"], "link": {"scope": "users", "type": "view"},
-                     "grantedToIdentitiesV2": [{"user": {"id": "u-megan", "email": USERS["u-megan"][1], "displayName": USERS["u-megan"][0]}}]}]
+                     "grantedToIdentitiesV2": [{"user": {"id": USERS["u-megan"][3], "displayName": USERS["u-megan"][0]}}]}]
         if pattern == 3:  # only links: organization and anonymous
             return [{"id": "p-link-org", "roles": ["read"], "link": {"scope": "organization", "type": "view"}},
                     {"id": "p-link-anon", "roles": ["read"], "link": {"scope": "anonymous", "type": "view"}}]
-        if pattern == 4:
-            return [user("u-megan")]
+        if pattern == 4:  # exactly the shape of Microsoft's "list permissions" example: the loginName is not a claim
+            name, _, sp_id, oid = USERS["u-megan"]
+            return [{"id": "p-u-megan", "roles": ["read"], "grantedToV2": {
+                "user": {"id": oid, "displayName": name}, "siteUser": {"id": str(sp_id), "displayName": name, "loginName": name}}}]
         return []  # nobody
 
     # -- views
@@ -197,8 +204,8 @@ class Tenant:
         body = {"id": item.id, "name": item.name, "eTag": item.etag(), "createdDateTime": ts(item.created),
                 "lastModifiedDateTime": ts(item.modified),
                 "webUrl": self.drives[item.drive]["webUrl"] + self.path_of(item).split("root:", 1)[1] + "/" + quote(item.name),
-                "createdBy": {"user": {"email": USERS[item.author][1], "displayName": USERS[item.author][0], "id": item.author}},
-                "lastModifiedBy": {"user": {"email": USERS[item.editor][1], "displayName": USERS[item.editor][0], "id": item.editor}}}
+                "createdBy": {"user": {"id": USERS[item.author][3], "displayName": USERS[item.author][0]}},
+                "lastModifiedBy": {"user": {"id": USERS[item.editor][3], "displayName": USERS[item.editor][0]}}}
         if item.parent is None:
             body["root"] = {}
             body["folder"] = {"childCount": sum(1 for i in self.items.values() if i.parent == item.id and not i.deleted)}
@@ -216,7 +223,9 @@ class Tenant:
             body["sharepointIds"] = {"listItemUniqueId": "luid-" + item.id, "siteId": SITE_ID.split(",")[1]}
             sig = uuid.uuid4().hex
             self.download_expiry[sig] = time.time() + 3600
-            body["@microsoft.graph.downloadUrl"] = f"{base}/download/{item.drive}/{item.id}?tempauth={sig}"
+            # SharePoint's own shape: the site's download.aspx on the SharePoint host, pre-authenticated by tempauth
+            body["@microsoft.graph.downloadUrl"] = (f"{(DOWNLOAD_URL.rstrip('/') or base)}{SITE_PATH}/_layouts/15/download.aspx"
+                                                    f"?UniqueId={quote(item.drive + ':' + item.id, safe='')}&tempauth={sig}")
             if expand_fields:
                 body["listItem"] = {"id": item.id[-4:], "fields": {"@odata.etag": item.etag(), **item.fields}}
         return body
@@ -298,6 +307,7 @@ class GraphError(Exception):
 
 
 T = Tenant()
+RECORD_LOCK = threading.Lock()
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -313,9 +323,15 @@ class Handler(BaseHTTPRequestHandler):
 
     def _send(self, status, body=None, content_type="application/json", raw=None, headers=None):
         data = raw if raw is not None else (b"" if body is None else json.dumps(body).encode("utf-8"))
+        if RECORD and not self.path.startswith("/mock/"):
+            self._record(status, body if raw is None else None, content_type, headers or {})
         self.send_response(status)
         for k, v in (headers or {}).items():
             self.send_header(k, v)
+        if self.path.startswith("/v1.0/"):
+            self.send_header("request-id", str(uuid.uuid4()))
+            if self.headers.get("client-request-id"):
+                self.send_header("client-request-id", self.headers.get("client-request-id"))
         if status not in (204, 302):
             self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(data)))
@@ -323,8 +339,20 @@ class Handler(BaseHTTPRequestHandler):
         if data:
             self.wfile.write(data)
 
+    def _record(self, status, body, content_type, headers):
+        entry = {"method": self.command, "url": self.path, "host": self.headers.get("Host"), "status": status,
+                 "authorization": bool(self.headers.get("Authorization")), "contentType": content_type,
+                 "clientRequestId": self.headers.get("client-request-id"),
+                 "headers": {k: v for k, v in headers.items() if k in ("Location", "Retry-After")}, "body": body}
+        with RECORD_LOCK, open(RECORD, "a", encoding="utf-8") as out:
+            out.write(json.dumps(entry) + "\n")
+
     def _error(self, e):
-        self._send(e.status, {"error": {"code": e.code, "message": e.message}}, headers=e.headers)
+        # Graph's error shape, with the ids Microsoft's support asks for
+        inner = {"date": ts(datetime.now(timezone.utc)), "request-id": str(uuid.uuid4())}
+        if self.headers.get("client-request-id"):
+            inner["client-request-id"] = self.headers.get("client-request-id")
+        self._send(e.status, {"error": {"code": e.code, "message": e.message, "innerError": inner}}, headers=e.headers)
 
     def _form(self):
         length = int(self.headers.get("Content-Length") or 0)
@@ -355,7 +383,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._mock(method, path, query)
             if method == "POST" and re.fullmatch(r"/[^/]+/oauth2/v2\.0/token", path):
                 return self._token(path)
-            if path.startswith("/download/"):
+            if path.endswith("/_layouts/15/download.aspx"):
                 return self._download(path, query)
             if not path.startswith("/v1.0/"):
                 raise GraphError(404, "itemNotFound", "Not found.")
@@ -394,11 +422,12 @@ class Handler(BaseHTTPRequestHandler):
         if self.headers.get("Authorization"):
             # SharePoint download URLs are pre-authenticated; a client that forwards its Graph token there leaks it
             raise GraphError(400, "invalidRequest", "Download URLs must be called without an Authorization header.")
-        m = re.fullmatch(r"/download/([^/]+)/([^/]+)", path)
+        drive, _, iid = query.get("UniqueId", "").partition(":")
         sig = query.get("tempauth", "")
         with T.lock:
             expiry = T.download_expiry.get(sig)
-            item = T.items.get(m.group(2)) if m else None
+            item = T.items.get(iid)
+            item = item if item is not None and item.drive == drive else None
         if expiry is None or expiry < time.time():
             raise GraphError(401, "unauthenticated", "The download URL has expired.")
         if item is None or item.deleted or item.folder:
@@ -522,6 +551,7 @@ class Handler(BaseHTTPRequestHandler):
                     libraries[f.drive] += 1
                 return self._send(200, {"site": SITE_URL, "siteId": SITE_ID, "liveFiles": len(files), "filesPerDrive": libraries,
                                         "deletedItems": sum(1 for i in T.items.values() if i.deleted), "tokensIssued": len(T.tokens),
+                                        "users": {u[1]: u[3] for u in USERS.values()},
                                         "requests": T.requests})
             m = re.fullmatch(r"/mock/items/([^/]+)", path)
             if method == "GET" and m:

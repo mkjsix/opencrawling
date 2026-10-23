@@ -5,11 +5,14 @@ stateful emulator of the **Entra ID client-credentials token endpoint** and the 
 the connector uses. It serves a generated site, so the SharePoint repository connector can be tested end to end, over
 real HTTP, without a Microsoft 365 tenant. It is one Python file using only the standard library.
 
-> **What it is not.** The emulator follows Microsoft's Graph documentation (learn.microsoft.com): the token response,
-> `grantedToV2` permissions, sharing links, the `deleted` facet, `@odata.nextLink` / `@odata.deltaLink`, 410 resync with
-> a `Location`, `Retry-After`. Where the documentation is silent, for example exactly which permissions an app-only caller
-> sees, it uses the shape the connector expects. It proves the connector against a Graph-shaped service; it does not
-> prove Microsoft's exact behaviour. Run the connector's read-only live probe against a real tenant for that.
+> **How far to trust it.** The emulator is held against what Microsoft publishes, not against its author's reading of it:
+> [`conformance/`](conformance/) checks every request and response of a test run against Microsoft's Graph v1.0 OpenAPI
+> description (strictly: no property that Microsoft neither declares nor shows in its examples), and the connector's
+> tests run Microsoft's own example payloads from the Graph documentation. Its identities follow those examples: a
+> permission's `user` carries an object id and no e-mail, and one permission pattern is exactly the shape of Microsoft's
+> "list permissions" example. Where Microsoft's documentation is silent, for example how complete `/permissions` is for an
+> app-only caller, real throttling thresholds or delta latency, nothing here can stand in for a tenant: run the
+> connector's read-only live probe against a real one for that.
 
 ## Running it
 
@@ -40,7 +43,9 @@ site-url: https://contoso.sharepoint.com/sites/engineering
 | `GRAPH_SEED` | `42` | The site is generated deterministically from this seed |
 | `GRAPH_PAGE_SIZE` | `200` | Default page size (the client's `$top` wins, up to 999) |
 | `GRAPH_TOKEN_SECONDS` | `3599` | Access token lifetime |
-| `GRAPH_PUBLIC_URL` | (request host) | Base URL used in links, when clients reach the emulator through another name |
+| `GRAPH_PUBLIC_URL` | (request host) | Base URL of Graph links (`@odata.nextLink`, …), e.g. `https://graph.microsoft.com` behind Dev Proxy |
+| `GRAPH_DOWNLOAD_URL` | (request host) | Base URL of the pre-authenticated download links, e.g. `https://contoso.sharepoint.com` behind Dev Proxy |
+| `GRAPH_RECORD` | — | Append every token, Graph and download exchange (request, status, headers, body) to this JSON-lines file, for `conformance/check_conformance.py` |
 | `GRAPH_QUIET` | `false` | Suppress the request log |
 
 ## The generated site
@@ -51,19 +56,25 @@ site-url: https://contoso.sharepoint.com/sites/engineering
   `SPX-<itemId>-e<version>` that changes with each edit.
 - **List item columns:** `Title`, `ProjectCode`, `DocumentStatus` (choice), `Classification` (managed metadata term),
   `Reviewers` (people), `Budget` (number), plus system columns that the connector must skip.
-- **Permissions:** six patterns, repeating by file number:
+- **Users:** Adele, Megan and Diego, each with an e-mail (UPN), a SharePoint site-user id and an Entra object id
+  (`/mock/stats` lists the object ids).
+- **Permissions:** six patterns, repeating by file number. A user grant is shaped like Microsoft's documented permissions:
+  `grantedToV2.user` with the object id and display name (no e-mail), beside a `siteUser` with a membership claim.
   0. "Everyone except external users";
-  1. an Entra group with write and one user with read;
-  2. the "Engineering Owners" SharePoint group plus a specific-people sharing link;
+  1. an Entra group with write and Adele with read;
+  2. the "Engineering Owners" SharePoint group plus a specific-people sharing link to Megan (object id only);
   3. only an organization and an anonymous sharing link;
-  4. one user;
+  4. Megan, exactly in the shape of Microsoft's "list permissions" example: her `siteUser.loginName` is her display name,
+     not a claim, so only her object id identifies her;
   5. no permissions at all.
 - **Delta:** the first enumeration lists every item in an order that puts some files before their folders. Later calls
   with a token return only the changes, the last occurrence of each item only. A deleted folder is reported on its own,
   without its children.
-- **Download URLs:** pre-authenticated and valid for an hour. They **reject any request that carries an `Authorization`
-  header**, so a client that forwards its Graph token there fails loudly. `/content` answers with a 302 to a fresh
-  download URL.
+- **Download URLs:** SharePoint's shape (`<site>/_layouts/15/download.aspx?UniqueId=…&tempauth=…`), pre-authenticated and
+  valid for an hour. They **reject any request that carries an `Authorization` header**, so a client that forwards its
+  Graph token there fails loudly. `/content` answers with a 302 to a fresh download URL.
+- **Errors and ids:** errors carry Graph's `innerError` (`date`, `request-id`, and the caller's `client-request-id`), and
+  Graph responses carry `request-id` and echo `client-request-id`.
 
 ## Mock-only administration (`/mock/…`, not authenticated)
 
@@ -81,6 +92,15 @@ site-url: https://contoso.sharepoint.com/sites/engineering
 | `POST /mock/expire-tokens`, `POST /mock/expire-downloads` | Invalidate every access token / download URL |
 | `POST /mock/reset` | Regenerate the site from the seed |
 
+## Conformance tools ([`conformance/`](conformance/))
+
+| Tool | What it does |
+|---|---|
+| `fetch_doc_examples.py` | Extracts Microsoft's example requests, responses and resource representations from the Graph documentation pages of the APIs the connector uses, at a pinned commit of `microsoftgraph/microsoft-graph-docs-contrib` (standard library only) |
+| `check_conformance.py` | Checks a `GRAPH_RECORD` recording (or example files) against Microsoft's Graph v1.0 OpenAPI description at a pinned commit of `microsoftgraph/msgraph-metadata`: paths, methods, query parameters, response schemas, undeclared properties (`--strict`, with `--documented` accepting what Microsoft's examples show), verbatim paging links and `client-request-id`. Needs `pyyaml` and `jsonschema` (`uv run --with …`) |
+| `documented_permissions.py` | From the permission tables of the Graph API pages, the application permissions every recorded call accepts (standard library only) |
+| `selftest-negative.jsonl` | A recording the checker must reject (a hand-built paging URL, a request without `client-request-id`) |
+
 ## Used by
 
 - `SharePointMockServerTest` runs the connector scenarios over HTTP:
@@ -92,6 +112,8 @@ site-url: https://contoso.sharepoint.com/sites/engineering
   - throttling and expired download URLs;
   - a wrong secret.
 
-  `scripts/test-sharepoint-repository-connector.sh` starts the emulator and runs these tests.
+  `scripts/test-sharepoint-repository-connector.sh` starts the emulator, runs these tests and the conformance checks.
+- `scripts/test-sharepoint-devproxy.sh` runs the scenarios through Microsoft Dev Proxy, with the real Microsoft host
+  names rewritten to the emulator.
 - `scripts/test-sharepoint-decoupled.sh` with `docker/docker-compose-decoupled-with-sharepoint.yml` runs the whole
   pipeline from the emulator through Kafka, Tika, Ollama and pgvector to MCP secure search.

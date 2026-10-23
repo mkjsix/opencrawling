@@ -10,8 +10,12 @@ app-only with the OAuth 2.0 client-credentials grant against Microsoft Entra ID.
 1. **An app registration in Microsoft Entra ID** (Entra admin center → App registrations → New registration), with:
    - a **client secret** (Certificates & secrets). Note the secret's *value*, the **Application (client) ID** and the
      **Directory (tenant) ID**;
-   - the Microsoft Graph **application** permission **`Sites.Read.All`**, or **`Sites.Selected`** plus a `read` grant on
-     the site to crawl (`POST /sites/{site-id}/permissions`, made by an administrator);
+   - the Microsoft Graph **application** permission **`Sites.Read.All`**. Microsoft's permission tables for every Graph
+     API the connector calls accept it, and it is the least privileged permission that covers them all: the site lookup
+     needs it, the drive and item APIs would also take `Files.Read.All`. The conformance test checks this against
+     Microsoft's documentation on every run. **`Sites.Selected`** (with a `read` grant on the site, made by an
+     administrator through `POST /sites/{site-id}/permissions`) is Microsoft's site-scoped alternative. It doesn't appear
+     in those per-API tables and has not been tested with this connector;
    - **admin consent** for that permission. Without it the token is issued but every Graph call answers 403.
 
    The connector only **reads**: it never creates, changes or deletes anything in SharePoint.
@@ -44,13 +48,16 @@ exist.
    token, falling back to `/content` when that URL has expired. It is streamed to a temporary file, handed to the
    claim-check store and deleted when the stream is closed. Files above `max-file-size-bytes` are indexed by metadata only.
 6. **Security:** each file's Graph permissions mapped to OIS permissions, failing closed (see *Security mapping*).
-7. **Throttling:** 429 and 503 honour `Retry-After` through one gate shared by all workers, with exponential back-off and
-   jitter when the header is missing; a throttled or failing item is never mistaken for a deleted one. An expired token
-   (401) is renewed once.
+7. **Throttling:** 429, 503 and 504 honour `Retry-After` through one gate shared by all workers. The header is treated as
+   a floor: it is whole seconds and may be rounded down, so the connector waits one second more, and never less than its
+   exponential back-off with jitter. A `Retry-After: 0` can't turn into a burst of retries. A throttled or failing item is
+   never mistaken for a deleted one. An expired token (401) is renewed once. Like Microsoft's Graph SDK, 500, 502 and 507
+   are not retried: the item fails, the delta link doesn't advance, and the next crawl tries it again.
 8. **Token safety:** redirects are followed by hand, and the token is only ever sent to the configured Graph host.
 9. **Bounded parallelism** (Java 25 `StructuredTaskScope` + `ObservabilityTask`) and an optional `max-documents` cap for
    test runs. Requests carry the `ISV|OpenCrawling|OpenCrawling-SharePoint-Connector/1.0` User-Agent Microsoft recommends
-   for throttling diagnostics.
+   for throttling diagnostics, and a `client-request-id` GUID per request. An error names Graph's `request-id` and the
+   `client-request-id`, which Microsoft's support asks for.
 
 ## Configuration Properties
 
@@ -78,7 +85,7 @@ camelCase keys).
 | `include-custom-fields` | `includeCustomFields` | `true` | Emit list item columns |
 | `field-prefix` | `fieldPrefix` | `sharepoint_field_` | Prefix of list item column keys |
 | `include-acls` | `includeAcls` | `true` | Read item permissions. When `false`, every document is **public** |
-| `user-identity` | `userIdentity` | `email` | Users as lower-case e-mail / UPN (`email`) or Entra object id (`id`) |
+| `user-identity` | `userIdentity` | `email` | `email`: a person is granted by lower-case e-mail / UPN **and** by Entra object id, whichever the permission carries. `id`: by object id only |
 | `fallback-principals` | `fallbackPrincipals` | — | Readers for files with no readable permission, comma-separated: `group:X`, `user:Y`, a bare name (a group) or `public`. Empty means nobody |
 | `everyone-identity` | `everyoneIdentity` | — | Identity granted for SharePoint's "Everyone" claim (e.g. `public`); empty grants nothing |
 | `everyone-except-external-identity` | `everyoneExceptExternalIdentity` | — | Identity for "Everyone except external users" (e.g. an all-employees group); empty grants nothing |
@@ -142,9 +149,9 @@ A crawled file (`action: UPSERT`):
     "sharepoint.etag": ["\"{01ABCDEF-2345-GHIJ},3\""],
     "sharepoint.cTag": ["\"c:{01ABCDEF-2345-GHIJ},3\""],
     "sharepoint.createdDateTime": ["2026-03-02T09:14:00Z"],
-    "sharepoint.createdBy": ["adele.vance@contoso.com"],
+    "sharepoint.createdBy": ["Adele Vance"],
     "sharepoint.lastModifiedDateTime": ["2026-10-20T16:02:11Z"],
-    "sharepoint.lastModifiedBy": ["megan.bowen@contoso.com"],
+    "sharepoint.lastModifiedBy": ["Megan Bowen"],
     "sharepoint_field_ProjectCode": ["ENG-042"],
     "sharepoint_field_DocumentStatus": ["Approved"],
     "sharepoint_field_Classification": ["Internal"],
@@ -154,7 +161,8 @@ A crawled file (`action: UPSERT`):
     "inheritanceEnabled": false,
     "permissions": [
       { "identity": "0d1e6b2a-0000-4000-8000-00000000e001", "identityType": "group", "access": "write" },
-      { "identity": "adele.vance@contoso.com", "identityType": "user", "access": "read" }
+      { "identity": "adele.vance@contoso.com", "identityType": "user", "access": "read" },
+      { "identity": "a1d4e1e0-0000-4000-8000-0000000000a1", "identityType": "user", "access": "read" }
     ]
   }
 }
@@ -166,7 +174,7 @@ A deleted file (`action: DELETE`) carries the same `id` and `sharepoint.status: 
 
 | Graph permission | OIS rule |
 |---|---|
-| `grantedToV2` / `grantedToIdentitiesV2` user, role `read` | `read` for the user (e-mail / UPN, or object id with `user-identity: id`) |
+| `grantedToV2` / `grantedToIdentitiesV2` person, role `read` | `read` for the person: the e-mail / UPN from the `siteUser` membership claim or the `user` facet, and the Entra object id from `user.id` (only the object id with `user-identity: id`) |
 | … role `write` or `owner` | `write` (which also allows reading) |
 | Entra security or Microsoft 365 group | the group's object id |
 | SharePoint group (`siteGroup`) | `sharepoint-group:<siteId>:<groupId>` |
@@ -177,11 +185,18 @@ A deleted file (`action: DELETE`) carries the same `id` and `sharepoint.status: 
 | Sharing link, scope `organization` / `anonymous` | `organization-link-identity` / `anonymous-link-identity`, or nothing |
 | Sharing link, scope `existingAccess`, and any other role | nothing |
 
+**Persons.** Microsoft's documented permissions identify a person by the `user` facet's object id, and often carry no
+e-mail. The `siteUser` beside it holds the UPN in a membership claim (`i:0#.f|membership|<upn>`) when SharePoint returns
+one, but Microsoft's examples also show it holding just the display name. The connector therefore grants a person by
+every identifier it can establish: the e-mail / UPN, and the object id. It never uses a display name or SharePoint's
+numeric site-user id, which identify nobody outside the site.
+
 A file whose permissions grant nobody gets `fallback-principals`, or no reader at all. Since the MCP server treats an empty
 permission list as "nobody", such a file is **never** made public. The broad SharePoint audiences (Everyone, organization
 and anonymous links) only grant access when you map them to an identity your users carry, for example `public` or an
-all-employees group. To let MCP clients match these rules, pass users' e-mail (or object id) as `userPrincipal` and their
-Entra group object ids (and any `sharepoint-group:` tokens) as `userRoles`.
+all-employees group. To let MCP clients match these rules, pass the user's e-mail as `userPrincipal`, and the user's
+Entra object id (the token's `oid` claim) with their Entra group object ids (and any `sharepoint-group:` tokens) as
+`userRoles`.
 
 ## Incremental Crawls and Delete Detection
 
@@ -230,7 +245,7 @@ The unit tests run against MockWebServer with Graph response fixtures in `src/te
 They cover tokens and renewal, throttling, redirects, paging, delta, the tree crawl, tombstones, downloads, list item
 columns and the security mapping.
 
-### 2. Standalone connector test
+### 2. Standalone connector test, with conformance to Microsoft's published artifacts
 
 ```bash
 ./scripts/test-sharepoint-repository-connector.sh
@@ -238,10 +253,47 @@ columns and the security mapping.
 
 The script starts the [Graph mock](graph-mock/README.md), an Entra ID + Microsoft Graph emulator, on a local port
 (`GRAPH_MOCK_PORT`, default `18180`) and runs the tests above with `GRAPH_MOCK_URL` set, which adds
-`SharePointMockServerTest`: seven connector scenarios over real HTTP (full crawl, delta increments, a deleted folder, a
-permission-only change, a resync, throttling and expired download URLs, a wrong secret).
+`SharePointMockServerTest`: eight connector scenarios over real HTTP (full crawl, delta increments, a deleted folder, a
+permission-only change, a tree crawl after delta crawls, a resync, throttling and expired download URLs, a wrong secret).
 
-### 3. Decoupled pipeline test
+No mock can prove what Microsoft's service does, so the emulator and the connector are held against what Microsoft
+publishes itself, each pinned to a commit so that a run is reproducible (`CONFORMANCE=auto` runs this when `uv` is
+installed). The tools are in [`graph-mock/conformance/`](graph-mock/conformance/):
+
+| Check | Against | What it proves |
+|---|---|---|
+| `GraphDocsExamplesTest` | Microsoft's example payloads from the Graph documentation (`microsoftgraph/microsoft-graph-docs-contrib`) | The connector maps every documented permission to real identities (never a display name), builds documents from the documented items, and crawls the documented delta pages |
+| `check_conformance.py --strict` | Microsoft's Graph v1.0 OpenAPI description (`microsoftgraph/msgraph-metadata`) | Every request the connector made exists in the API, with declared query parameters; every response the emulator gave validates against Microsoft's schema and has no property Microsoft doesn't declare or show in its examples; every paging request is exactly a link Graph returned; every Graph request carries a `client-request-id` |
+| The checker's self-test | Microsoft's own examples, and a recording it must reject | The checker accepts Microsoft's payloads and catches a hand-built paging URL |
+| `documented_permissions.py` | The permission tables of every Graph API page the connector calls | `Sites.Read.All` covers every call |
+
+Microsoft's examples are documentation and are fetched when the tests run, not stored in this repository. The OpenAPI
+description (~45 MB) is cached in `~/.cache/opencrawling/graph-openapi`.
+
+### 3. Through Microsoft Dev Proxy
+
+```bash
+./scripts/test-sharepoint-devproxy.sh
+```
+
+[Microsoft Dev Proxy](https://aka.ms/devproxy) (`brew install dotnet/dev-proxy/dev-proxy`) sits between the connector and
+the emulator. The connector talks to the real host names (`login.microsoftonline.com`, `graph.microsoft.com`,
+`contoso.sharepoint.com`), and Dev Proxy's `RewritePlugin` routes them to the emulator. Microsoft's own plugins act on
+the traffic:
+- the eight scenarios must pass with `GraphRandomErrorPlugin` failing `ERROR_RATE`% (default 10) of Graph requests with
+  429, 503 or 504, Microsoft's Graph rate-limiting preset (`RateLimitingPlugin`, window `RATE_LIMIT_WINDOW` seconds,
+  default 10, preset 60), `RetryAfterPlugin` (a request sent too early is throttled) and the Graph guidance plugins;
+- `SharePointDevProxyChaosTest` crawls three times through Microsoft's unchanged Graph error preset (50% of requests fail
+  with 429, 500, 502, 503, 504 or 507). It requires that no crawl tombstones a live file, that the next crawl without errors
+  brings every file in, and that the crawl after that finds nothing (the delta link never moved past a failure).
+
+Dev Proxy runs contained: never as the system proxy, without its first-run keychain step, with its CA under
+`target/devproxy` trusted by the test JVM only. Two of its findings are expected: a few requests that were already on
+their way when another worker was throttled reach Graph inside the throttle window (they get a 429 and wait like any
+other), and the paging guidance flags every page because the rewrite hides the original URL from it; the conformance
+check above verifies the paging links instead.
+
+### 4. Decoupled pipeline test
 
 ```bash
 ./scripts/test-sharepoint-decoupled.sh                     # images from docker/Dockerfile.*
@@ -256,7 +308,7 @@ mock site through Kafka, Tika, Ollama and pgvector, then checks:
 - a delta increment carries an edit, a file delete, a folder delete and a new file;
 - a permission-only change is not seen by delta, and is reconciled by a tree crawl.
 
-### 4. Read-only live probe against a tenant
+### 5. Read-only live probe against a tenant
 
 `SharePointLiveProbeTest` runs only when `SHAREPOINT_LIVE_PROBE=1` is set. It crawls up to `SHAREPOINT_MAX_DOCUMENTS`
 files (default 25) of a real site with GET requests only, reads and discards their content, keeps the crawl state in a
@@ -284,9 +336,12 @@ mvn test -pl oc-sharepoint-repository-connector -am -Dtest=SharePointLiveProbeTe
 
 ## Known Limitations
 
-- **Not yet run against a real tenant.** The connector is covered by the unit tests, the Graph mock scenarios and the
-  decoupled pipeline test. The mock follows Microsoft's documentation, but it doesn't prove Microsoft's exact behaviour. Run
-  the read-only live probe first.
+- **Not yet run against a real tenant.** The connector is covered by the unit tests, the Graph mock scenarios, the
+  conformance checks against Microsoft's OpenAPI description, examples and permission tables, Dev Proxy, and the
+  decoupled pipeline test. What none of these can show is how a real tenant behaves where Microsoft's documentation is
+  silent: how complete `/permissions` is for an app-only caller, real throttling thresholds, and how long delta lags
+  behind a change. Run the read-only live probe first on a new tenant.
+- **`Sites.Selected` is untested.** See the prerequisites.
 - **App-only permission visibility.** Microsoft documents that `/permissions` may return only part of the permissions to
   callers that aren't owners. What an app with `Sites.Read.All` sees has not been verified on a real tenant.
 - **SharePoint group membership is not expanded.** Graph has no API for SharePoint groups' members, so they're emitted as

@@ -243,7 +243,8 @@ log_step 5 "Reading the ground truth from the Graph mock..."
 STATS=$(mock /mock/stats)
 LIVE_FILES=$(echo "$STATS" | jq -r '.liveFiles')
 read -r GROUP_DRIVE GROUP_FILE <<< "$(pattern_file 1 'b!docs')"      # Entra group (write) + Adele (read)
-read -r MEGAN_DRIVE MEGAN_FILE <<< "$(pattern_file 4 'b!docs')"      # Megan only
+read -r MEGAN_DRIVE MEGAN_FILE <<< "$(pattern_file 4 'b!docs')"      # Megan only, in the shape of Microsoft's documented permissions
+MEGAN_OID=$(echo "$STATS" | jq -r '.users["megan.bowen@contoso.com"]')  # those identify her by Entra object id only
 read -r NOBODY_DRIVE NOBODY_FILE <<< "$(pattern_file 5 'b!docs')"    # no permissions at all
 read -r ALL_DRIVE ALL_FILE <<< "$(pattern_file 0 'b!contracts')"     # Everyone except external users
 GROUP_CODE=$(reference_code "$GROUP_FILE")
@@ -308,7 +309,7 @@ search_as() {
     | grep -o 'items/[0-9A-Z]*' | sort -u || true
 }
 ADELE=$(search_as "adele.vance@contoso.com" "${ENG_GROUP}")
-MEGAN=$(search_as "megan.bowen@contoso.com" "")
+MEGAN=$(search_as "megan.bowen@contoso.com" "${MEGAN_OID}")  # an MCP client passes the user's object id with the groups
 OUTSIDER=$(search_as "someone@fabrikam.com" "")
 NOBODY_CONTENT=$(tool getDocumentContent "$(jq -nc --arg u "$(doc_id "$NOBODY_DRIVE" "$NOBODY_FILE")" '{documentUri:$u, userPrincipal:"someone@fabrikam.com", userRoles:"", dimensions:1024}')")
 NOBODY_LISTED=$(tool listAccessibleSources '{"userPrincipal":"someone@fabrikam.com","userRoles":"","dimensions":1024}')
@@ -319,7 +320,7 @@ if echo "$MEGAN" | grep -qx "items/${GROUP_FILE}"; then log_error "Megan must no
 [ -z "$OUTSIDER" ] || { log_error "An outsider found: $(echo $OUTSIDER)"; exit 1; }
 if echo "$NOBODY_CONTENT" | grep -q "SPX-${NOBODY_FILE}-"; then log_error "getDocumentContent returned the no-reader file."; exit 1; fi
 if echo "$NOBODY_LISTED" | grep -q "items/${NOBODY_FILE}"; then log_error "listAccessibleSources listed the no-reader file."; exit 1; fi
-log_success "Adele and Megan find exactly their files; an outsider finds nothing; the no-reader file stays closed."
+log_success "Adele (by e-mail and group) and Megan (by object id) find exactly their files; an outsider finds nothing; the no-reader file stays closed."
 log_pass "MCP secure search enforces the SharePoint permissions."
 
 # ------------------------------------------------------------------------------
@@ -359,7 +360,7 @@ echo "${SCAN_SUMMARY}" | grep -q "finished: 1 documents," \
   || { log_error "The tree crawl must re-emit only the file whose permissions changed: ${SCAN_SUMMARY#*: }"; exit 1; }
 log_success "The tree crawl reused the delta crawls' state and re-emitted only that file."
 wait_for "The tree crawl applied the new permissions" "${ROW} AND (metadata->'security')::text LIKE '%new-audit-group%'" "-gt 0"
-wait_for "Megan's old grant is gone" "${ROW} AND (metadata->'security')::text LIKE '%megan.bowen%'" "-eq 0"
+wait_for "Megan's old grant is gone" "${ROW} AND (metadata->'security')::text LIKE '%${MEGAN_OID}%'" "-eq 0"
 log_pass "The tree crawl reconciled the permissions."
 
 log_info "Graph requests served: $(mock /mock/stats | jq -c '.requests' | cut -c1-300)"

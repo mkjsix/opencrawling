@@ -52,11 +52,19 @@ import static org.junit.jupiter.api.Assertions.*;
 class SharePointMockServerTest {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
-    private static final String BASE = System.getenv("GRAPH_MOCK_URL") == null ? "" : System.getenv("GRAPH_MOCK_URL").replaceAll("/+$", "");
+    private static final String BASE = env("GRAPH_MOCK_URL", "");
+    /** Where the connector sends Graph and token requests: the mock itself, or real host names routed to it by Dev Proxy. */
+    private static final String GRAPH_URL = env("GRAPH_MOCK_GRAPH_URL", BASE + "/v1.0");
+    private static final String AUTHORITY_URL = env("GRAPH_MOCK_AUTHORITY_URL", BASE);
     private final HttpClient http = HttpClient.newHttpClient();
 
     @TempDir
     Path state;
+
+    private static String env(String name, String fallback) {
+        String value = System.getenv(name);
+        return value == null || value.isBlank() ? fallback : value.replaceAll("/+$", "");
+    }
 
     @BeforeEach
     void reset() throws Exception {
@@ -73,7 +81,7 @@ class SharePointMockServerTest {
 
     private SharePointRepositoryConnector connector(Map<String, String> extra) {
         Map<String, String> config = new HashMap<>(Map.of("tenantId", "contoso-tenant", "clientId", "opencrawling-test-app",
-                "clientSecret", "test-secret", "authorityUrl", BASE, "graphUrl", BASE + "/v1.0",
+                "clientSecret", "test-secret", "authorityUrl", AUTHORITY_URL, "graphUrl", GRAPH_URL,
                 "siteUrl", "https://contoso.sharepoint.com/sites/engineering", "stateDirectory", state.toString(),
                 "initialBackoffMs", "50"));
         config.putAll(extra);
@@ -127,8 +135,13 @@ class SharePointMockServerTest {
         }
         JsonNode groupFile = files(1).getFirst();
         RepositoryDocument d = byId.get(id(groupFile.path("drive").asText(), groupFile.path("id").asText()));
-        assertEquals("0d1e6b2a-0000-4000-8000-00000000e001,adele.vance@contoso.com",
-                String.join(",", d.security().permissions().stream().map(r -> r.identity()).sorted().toList()));
+        assertEquals("0d1e6b2a-0000-4000-8000-00000000e001,a1d4e1e0-0000-4000-8000-0000000000a1,adele.vance@contoso.com",
+                String.join(",", d.security().permissions().stream().map(r -> r.identity()).sorted().toList()),
+                "the Entra group, and Adele by e-mail (from her membership claim) and by object id");
+        JsonNode documented = files(4).getFirst(); // the shape of Microsoft's "list permissions" example
+        assertEquals(List.of("a1d4e1e0-0000-4000-8000-0000000000a2"),
+                byId.get(id(documented.path("drive").asText(), documented.path("id").asText())).security().permissions().stream()
+                        .map(r -> r.identity()).toList(), "Megan by object id: her loginName there is a display name, not a claim");
         assertTrue(d.metadata().get("sharepoint.path").getFirst().startsWith("/"));
         assertNotNull(d.metadata().get("sharepoint_field_ProjectCode"));
     }
@@ -209,7 +222,7 @@ class SharePointMockServerTest {
     @Test
     void throttlingAndExpiredDownloadsAreAbsorbed() throws Exception {
         admin("/mock/faults", "{\"path\":\"/v1.0/drives/b!docs/root/delta\",\"status\":429,\"retryAfter\":1,\"count\":1}");
-        admin("/mock/faults", "{\"path\":\"/download/\",\"status\":401,\"count\":1}");
+        admin("/mock/faults", "{\"path\":\"/sites/engineering/_layouts/15/download.aspx\",\"status\":401,\"count\":1}");
         admin("/mock/faults", "{\"path\":\"/v1.0/drives/b!docs/items/\",\"status\":503,\"count\":1}");
         JsonNode stats = admin("/mock/stats", null);
         List<RepositoryDocument> documents = scan(connector(Map.of("driveName", "Documents")));
