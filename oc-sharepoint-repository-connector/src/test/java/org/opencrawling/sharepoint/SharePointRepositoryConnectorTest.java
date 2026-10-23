@@ -276,6 +276,22 @@ class SharePointRepositoryConnectorTest {
         closeAll(documents);
     }
 
+    @Test
+    void unreadableColumnsDoNotCostTheFiles() throws Exception {
+        // found against an independent Graph mock without the listItem endpoint: columns are metadata, the file still counts
+        graph.routes.put(MockGraph.DELTA_START, r -> new MockResponse().setResponseCode(400)
+                .setBody("{\"error\":{\"code\":\"invalidRequest\",\"message\":\"expand not supported\"}}"));
+        graph.body("GET /v1.0/drives/b!lib1/root/delta?$top=100", "application/json", withoutListItems("delta-1a.json"));
+        graph.body("GET /v1.0/drives/b!lib1/root/delta?token=page2", "application/json", withoutListItems("delta-1b.json"));
+        List<RepositoryDocument> documents = scan(connector(Map.of()));
+        RepositoryDocument readme = byId(documents).get(I2 + "|UPSERT");
+        assertNotNull(readme, "indexed without its columns: " + byId(documents).keySet());
+        assertNull(readme.metadata().get("sharepoint_field_DocumentStatus"));
+        assertEquals(1, graph.requests.stream().filter(k -> k.contains("/listItem?")).count(),
+                "after the first refusal the library's columns aren't requested again");
+        closeAll(documents);
+    }
+
     private String withoutListItems(String fixture) throws IOException {
         com.fasterxml.jackson.databind.node.ObjectNode page = (com.fasterxml.jackson.databind.node.ObjectNode) MAPPER.readTree(graph.fixture(fixture));
         page.path("value").forEach(item -> ((com.fasterxml.jackson.databind.node.ObjectNode) item).remove("listItem"));

@@ -231,6 +231,8 @@ public class SharePointRepositoryConnector implements RepositoryConnector {
         final SharePointCrawlState state;
         final String pathPrefix;
         volatile boolean fieldsPerItem;
+        /** List columns can't be read in this library (the per-item call answered 400, 403 or 404): files go without them. */
+        volatile boolean fieldsUnavailable;
         /** Folder paths looked up from Graph when the state does not know the folder yet (delta pages omit paths). */
         final Map<String, String> folderPaths = new ConcurrentHashMap<>();
 
@@ -465,8 +467,18 @@ public class SharePointRepositoryConnector implements RepositoryConnector {
             return;
         }
         JsonNode fields = item.path("listItem").path("fields");
-        if (settings.includeCustomFields() && !fields.isObject() && run.fieldsPerItem) {
-            fields = client.getListItemFields(driveId, id);
+        if (settings.includeCustomFields() && !fields.isObject() && run.fieldsPerItem && !run.fieldsUnavailable) {
+            try {
+                fields = client.getListItemFields(driveId, id);
+            } catch (GraphApiException e) {
+                if (e.status() != 400 && e.status() != 403 && e.status() != 404) {
+                    throw e;
+                }
+                // columns are metadata: without them the file is still indexed, with its content and permissions
+                run.fieldsUnavailable = true;
+                log.warn("List columns of library '{}' can't be read (HTTP {}); its files are indexed without them.",
+                        run.library.name(), e.status());
+            }
         }
         Download download = download(driveId, item);
         RepositoryDocument document;
