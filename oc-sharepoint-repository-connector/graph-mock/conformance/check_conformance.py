@@ -283,15 +283,17 @@ def main():
         url = urlsplit(e["url"])
         path = unquote(url.path)
         status = e["status"]
-        if re.fullmatch(r"/[^/]+/oauth2/v2\.0/token", path):
+        if e.get("kind") == "other":  # record_proxy.py: neither Graph, token nor download (e.g. a mock's admin API)
+            continue
+        if e.get("kind") == "token" or re.fullmatch(r"/[^/]+/oauth2/v2\.0/token", path):
             problems = []
             check_token(e, problems)
             route = f"{e['method']} /{{tenant}}/oauth2/v2.0/token {status}"
             checked[route] += 1
             failures[route] += [f"{e['source']}: {p}" for p in problems]
             continue
-        if path.endswith("/_layouts/15/download.aspx"):
-            route = f"{e['method']} {{site}}/_layouts/15/download.aspx {status}"
+        if e.get("kind") == "download" or path.endswith("/_layouts/15/download.aspx"):
+            route = f"{e['method']} {{download URL}} {status}"
             checked[route] += 1
             if e.get("authorization"):
                 failures[route].append(f"{e['source']}: a download request carried an Authorization header")

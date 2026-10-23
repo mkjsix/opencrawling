@@ -100,6 +100,8 @@ site-url: https://contoso.sharepoint.com/sites/engineering
 | `check_conformance.py` | Checks a `GRAPH_RECORD` recording (or example files) against Microsoft's Graph v1.0 OpenAPI description at a pinned commit of `microsoftgraph/msgraph-metadata`: paths, methods, query parameters, response schemas, undeclared properties (`--strict`, with `--documented` accepting what Microsoft's examples show), verbatim paging links and `client-request-id`. Needs `pyyaml` and `jsonschema` (`uv run --with …`) |
 | `documented_permissions.py` | From the permission tables of the Graph API pages, the application permissions every recorded call accepts (standard library only) |
 | `selftest-negative.jsonl` | A recording the checker must reject (a hand-built paging URL, a request without `client-request-id`) |
+| `record_proxy.py` | A recording reverse proxy for another Graph-like server (same JSON-lines format), which can also answer the token endpoint with a fixed bearer (standard library only) |
+| `compare_acl_oracle.py` | Holds the permissions the connector indexed against the RBAC oracle of the independent mock-graph-server, user by user (needs `pyyaml`) |
 
 ## Used by
 
@@ -115,5 +117,7 @@ site-url: https://contoso.sharepoint.com/sites/engineering
   `scripts/test-sharepoint-repository-connector.sh` starts the emulator, runs these tests and the conformance checks.
 - `scripts/test-sharepoint-devproxy.sh` runs the scenarios through Microsoft Dev Proxy, with the real Microsoft host
   names rewritten to the emulator.
+- `scripts/test-sharepoint-independent-mock.sh` runs the connector against an independently written Graph mock
+  (sergey-shulyak/mock-graph-server) and its RBAC oracle, as a second opinion on this one.
 - `scripts/test-sharepoint-decoupled.sh` with `docker/docker-compose-decoupled-with-sharepoint.yml` runs the whole
   pipeline from the emulator through Kafka, Tika, Ollama and pgvector to MCP secure search.

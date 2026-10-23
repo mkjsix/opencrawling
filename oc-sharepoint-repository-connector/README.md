@@ -293,7 +293,32 @@ their way when another worker was throttled reach Graph inside the throttle wind
 other), and the paging guidance flags every page because the rewrite hides the original URL from it; the conformance
 check above verifies the paging links instead.
 
-### 4. Decoupled pipeline test
+### 4. Against an independent Graph mock
+
+```bash
+./scripts/test-sharepoint-independent-mock.sh
+```
+
+A second opinion from a Graph mock written by someone else:
+[sergey-shulyak/mock-graph-server](https://github.com/sergey-shulyak/mock-graph-server) (MIT). It has sites, drives,
+inherited permissions, SharePoint site groups, delta, 410 resync, throttling, an admin API, and an RBAC test oracle: the
+exact files each of its 16 users can read, generated from its own permission model. The image runs pinned by digest,
+locked down on `127.0.0.1`, behind `graph-mock/conformance/record_proxy.py`, which records the traffic and answers the
+token endpoint that mock doesn't have.
+- `IndependentGraphMockTest` crawls its 4 sites in delta and tree mode (both must find the same files with the same
+  permissions), and drives changes through its admin API: new, replaced and deleted files, a deleted folder, a permission
+  grant, throttling and a reset (410).
+- `compare_acl_oracle.py` holds the permissions the connector indexed against that oracle, user by user: what the
+  OpenCrawling MCP server would let each user read must equal what the oracle says, with no leak and no gap.
+- `check_conformance.py` checks the recorded traffic against Microsoft's OpenAPI description. The connector's requests
+  must pass. Where that mock deviates from Microsoft (it puts `email` on permission identities, adds fields to error
+  bodies, refuses `$expand=listItem` and has no `/listItem` endpoint, and reports permission changes in plain delta),
+  the checker reports it.
+
+Running against it found one weakness of our own, now fixed: a file whose list columns couldn't be read was dropped;
+it is now indexed without its columns.
+
+### 5. Decoupled pipeline test
 
 ```bash
 ./scripts/test-sharepoint-decoupled.sh                     # images from docker/Dockerfile.*
@@ -308,7 +333,7 @@ mock site through Kafka, Tika, Ollama and pgvector, then checks:
 - a delta increment carries an edit, a file delete, a folder delete and a new file;
 - a permission-only change is not seen by delta, and is reconciled by a tree crawl.
 
-### 5. Read-only live probe against a tenant
+### 6. Read-only live probe against a tenant
 
 `SharePointLiveProbeTest` runs only when `SHAREPOINT_LIVE_PROBE=1` is set. It crawls up to `SHAREPOINT_MAX_DOCUMENTS`
 files (default 25) of a real site with GET requests only, reads and discards their content, keeps the crawl state in a
@@ -337,8 +362,8 @@ mvn test -pl oc-sharepoint-repository-connector -am -Dtest=SharePointLiveProbeTe
 ## Known Limitations
 
 - **Not yet run against a real tenant.** The connector is covered by the unit tests, the Graph mock scenarios, the
-  conformance checks against Microsoft's OpenAPI description, examples and permission tables, Dev Proxy, and the
-  decoupled pipeline test. What none of these can show is how a real tenant behaves where Microsoft's documentation is
+  conformance checks against Microsoft's OpenAPI description, examples and permission tables, Dev Proxy, an independent
+  Graph mock with its RBAC oracle, and the decoupled pipeline test. What none of these can show is how a real tenant behaves where Microsoft's documentation is
   silent: how complete `/permissions` is for an app-only caller, real throttling thresholds, and how long delta lags
   behind a change. Run the read-only live probe first on a new tenant.
 - **`Sites.Selected` is untested.** See the prerequisites.
