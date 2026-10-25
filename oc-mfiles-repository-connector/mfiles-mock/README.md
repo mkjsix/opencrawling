@@ -7,10 +7,10 @@ licence. It is one Python file using only the standard library.
 
 > **What it is not.** The mock follows the public MFWS reference (developer.m-files.com) and the behaviour of real
 > M-Files servers where it is known (the `{"Value": …}` token, anonymous tokens for empty credentials, `MoreResults`,
-> unsorted search results). Where the reference is silent, above all the
-> `/objects/{type}/{id}/{version}/permissions` payload, it uses the shape the connector expects. It proves the connector
-> against an MFWS-shaped server; it does not prove M-Files' exact behaviour. Run the connector's read-only live probe
-> against a real server for that.
+> unsorted search results). Its `/objects/{type}/{id}/{version}/permissions` payload mirrors one captured from a live
+> vault (numeric codes with `1` = allow, `IsPsudoUser`, the effective `AccessControlList` and the separate `NamedACL`
+> definition); its deny code `2` is an assumption. It proves the connector against an MFWS-shaped server, not every
+> M-Files behaviour: run the connector's read-only live probe against a real server for that.
 
 ## Running it
 
@@ -50,7 +50,7 @@ Point the connector at it with `url: http://localhost:8090/REST`, `vault-guid: {
   same second), to exercise time windows that hold more results than the limit.
 - **Typed properties**: text, multi-line text, floating, date, timestamp, boolean, lookups (customer, department,
   workflow, state, users) and a multi-select lookup (tags).
-- **Value lists** 16 (users), 17 (user groups), 200 (tags), 201 (departments), 7 and 8 (workflow and states).
+- **Value lists** 6 (users), 16 (user groups), as on a real vault, plus 200 (tags), 201 (departments), 7 and 8 (workflow and states).
 - **Permissions**, six patterns repeating by document: everybody (group 1); legal group plus a user; an object ACL
   restricted by a named ACL "Legal only" with a deny for user 15; finance plus the pseudo-user "Project manager"; two
   users; and no entries at all.

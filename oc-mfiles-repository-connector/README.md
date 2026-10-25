@@ -101,7 +101,7 @@ configuration in the Admin UI / `connectors.json` (class `org.opencrawling.mfile
 | `fallback-principals` | `fallbackPrincipals` | — | Readers when no permissions are readable (`group:X`, `user:Y`, `public`); empty means nobody |
 | `public-group-ids` | `publicGroupIds` | — | User group ids treated as everybody (e.g. the "All internal users" group) |
 | `principal-format` | `principalFormat` | `token` | `token` (`mfiles:user:<id>`, `mfiles:group:<id>`) or `name` (resolved through the value lists) |
-| `users-value-list`, `user-groups-value-list` | `usersValueList`, `userGroupsValueList` | `16`, `17` | Value lists holding users and user groups, for `principal-format: name` |
+| `users-value-list`, `user-groups-value-list` | `usersValueList`, `userGroupsValueList` | `6`, `16` | Value lists holding users and user groups, for `principal-format: name` (M-Files built-in lists 6 and 16) |
 | `qualify-principals` | `qualifyPrincipals` | `false` | Prefix every identity with the vault GUID; user and group ids are per vault |
 | `emit-deletes` | `emitDeletes` | `true` | Search deleted objects too (`d=include`) and send tombstones for them |
 | `incremental-enabled` | `incrementalEnabled` | `false` | Search from the last watermark, skip unchanged objects, purge ids an object no longer produces |
@@ -247,17 +247,23 @@ A property without a value is not emitted. Two property names that map to the sa
 
 ### Security mapping
 
-The connector reads `GET /objects/{type}/{id}/{version}/permissions`. That resource is **not part of the public MFWS
-reference**, so its payload is read defensively and every doubt resolves to "no access":
+The connector reads `GET /objects/{type}/{id}/{version}/permissions`. The resource is not in the public MFWS reference;
+the mapping below follows what a real M-Files server returns (verified against a live vault) and resolves every doubt to
+"no access". The payload carries the object's effective `AccessControlList` (a `CustomComponent` plus zero or more
+`AutomaticComponents`, e.g. workflow-state or metadata-driven permissions) and, separately, the `NamedACL` the object
+uses, whose own definition is not read: it is already reflected in the effective list.
 
 | M-Files permissions | OIS rule |
 |---|---|
-| An entry (`UserOrGroupID`, `IsGroup`) allowed to read (`ReadPermission`/`Read` `"Allow"`, or bit 1 of `AccessFlags`) | `read`, as `mfiles:user:<id>` / `mfiles:group:<id>` |
-| Read denied (`"Deny"`) in any component | `deny` (wins) |
-| Several components (object ACL, named ACL, workflow state, metadata-driven) | only identities allowed by **every** component get `read`, since M-Files combines them restrictively |
-| Pseudo-users (metadata-driven entries such as "Project manager"), numeric permission codes | nothing: they can't be resolved over MFWS |
-| A group in `public-group-ids` | `public` |
+| An entry (`UserOrGroupID`, `IsGroup`) with `ReadPermission: 1` (also textual `"Allow"`, or bit 1 of `AccessFlags`) | `read`, as `mfiles:user:<id>` / `mfiles:group:<id>` |
+| Any other numeric `ReadPermission` (the deny and not-set codes are not documented for MFWS), or `"Deny"` | `deny` for that identity (wins); an unverified code can only restrict |
+| Several active components (custom, workflow state, metadata-driven) | only identities allowed by **every** component get `read`, since M-Files combines them restrictively; inactive components (`IsActive: false`) are skipped |
+| Pseudo-users (`IsPsudoUser: true`, M-Files' spelling, or `HasConcreteUserOrGruopID: false`; e.g. "Project manager") | nothing: they can't be resolved over MFWS |
+| A group in `public-group-ids` (for example group 1, "All internal users") | `public` |
 | No readable permissions, or a server without the resource | `fallback-principals`, or nobody. Never public |
+
+On the verified vault every document used the built-in named ACL "Full control for all internal users" (group 1 with
+code `1` for every permission); its documents map to `mfiles:group:1`.
 
 In **vaf** mode the vault application returns `aclTokens` / `denyTokens` (`mfiles:user:<id>`, `mfiles:group:<id>`,
 `mfiles:role:<id>`) that are already effective permissions, pseudo-users included, and they are mapped one to one. Use
@@ -398,14 +404,17 @@ previous one downstream instead of leaving it indexed.
 
 ## Known Limitations
 
-- **Not yet run against a live M-Files server.** The connector follows the MFWS reference and the behaviour of the
-  ManifoldCF M-Files connector that ran against a real vault (token response `{"Value": …}`, `p21>=` searches,
-  `MoreResults`), and is covered by the mock-server tests. Run the read-only live probe above before the first production
-  crawl; it records exactly the payloads that still need confirming.
-- **Permissions over MFWS** come from an undocumented resource and are mapped fail-closed. Pseudo-users (metadata-driven
-  permissions) can't be resolved over MFWS: use the vaf mode, `fallback-principals`, or both.
-- **The pipeline tests run against the MFWS mock**, not a real M-Files Server, which has no container image. The mock
-  follows the MFWS reference, but the permissions payload is the connector's assumption (see the live probe above).
+- **Verified against one live M-Files vault** (MFWS on IIS, Forms login, 106 single-file documents): login and session
+  end, vault and structure reads, `p21>=` searches with `MoreResults`, properties, file downloads (all 106 documents with
+  content) and the permissions payload. Not covered by that vault, so only tested against the MFWS mock: multi-file
+  documents, deleted objects, versions, views, deny and pseudo-user entries, automatic permission components, and the vaf
+  mode (the vault application was not installed).
+- **Permissions over MFWS** come from a resource outside the public reference. The allow code (`1`) and the payload layout
+  are verified against a live vault; the deny and not-set codes are not, so any other code denies that identity.
+  Pseudo-users (metadata-driven permissions) can't be resolved over MFWS: use the vaf mode, `fallback-principals`, or both.
+- **The pipeline tests run against the MFWS mock**, not a real M-Files Server, which has no container image. The mock's
+  permissions payload mirrors the one captured from the live vault; its deny code (`2`) is an assumption, which the
+  connector does not depend on (every code other than `1` denies).
 - **Objects that leave the crawl scope** (for example a class change outside `class-ids`) are not detected by incremental
   runs; a full crawl into a clean index picks them up. Destroyed objects (removed rather than deleted) are not listed by
   MFWS and are not detected either.

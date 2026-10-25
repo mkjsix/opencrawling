@@ -57,6 +57,22 @@ class MFilesSecurityMapperTest {
         assertEquals(List.of("mfiles:user:12"), mapped.users());
         assertEquals(List.of("mfiles:group:5"), mapped.groups());
         assertFalse(mapped.security().inheritanceEnabled());
+        // the pseudo-user (IsPsudoUser, M-Files' spelling) is not mistaken for user 1001, the inactive automatic component
+        // does not deny user 12, and the NamedACL definition (group 8) is not part of the effective permissions
+        assertTrue(mapped.security().permissions().stream().noneMatch(r -> r.identity().equals("mfiles:user:1001")));
+        assertTrue(mapped.security().permissions().stream().noneMatch(r -> r.identity().equals("mfiles:group:8")));
+    }
+
+    /** The payload a real M-Files server returned (object 100, built-in named ACL "Full control for all internal users"). */
+    @Test
+    void realServerPayloadGrantsAllInternalUsers() throws Exception {
+        MFilesSecurityMapper.Mapped mapped = mapper(Map.of()).fromPermissions(
+                Optional.of(json(MockMFiles.fixture("permissions-real-server.json"))));
+        assertEquals(List.of("mfiles:group:1"), identities(mapped, "read"));
+        assertTrue(identities(mapped, "deny").isEmpty());
+        assertEquals("mfiles:group:1", mapped.acl());
+        assertEquals("public", mapper(Map.of("publicGroupIds", "1")).fromPermissions(
+                Optional.of(json(MockMFiles.fixture("permissions-real-server.json")))).acl());
     }
 
     @Test
@@ -72,12 +88,37 @@ class MFilesSecurityMapperTest {
     void unreadablePermissionsGiveNobodyNotPublic() throws Exception {
         MFilesSecurityMapper m = mapper(Map.of());
         assertTrue(m.fromPermissions(Optional.empty()).security().permissions().isEmpty());
-        // numeric permission codes are undocumented: never guessed
+        // pseudo-users (metadata-driven) cannot be resolved, under M-Files' spelling and the regular one
         assertTrue(m.fromPermissions(Optional.of(json("""
-                [{"UserOrGroupID":12,"IsGroup":false,"ReadPermission":1}]"""))).security().permissions().isEmpty());
-        // pseudo-users (metadata-driven) cannot be resolved
+                [{"UserOrGroupID":3,"IsPsudoUser":true,"HasConcreteUserOrGruopID":false,"ReadPermission":1}]""")))
+                .security().permissions().isEmpty());
         assertTrue(m.fromPermissions(Optional.of(json("""
                 [{"UserOrGroupID":3,"IsPseudoUser":true,"ReadPermission":"Allow"}]"""))).security().permissions().isEmpty());
+    }
+
+    @Test
+    void numericCodesGrantOnlyTheVerifiedAllowValue() throws Exception {
+        MFilesSecurityMapper m = mapper(Map.of());
+        assertEquals(List.of("mfiles:user:12"), identities(m.fromPermissions(Optional.of(json("""
+                [{"UserOrGroupID":12,"IsGroup":false,"ReadPermission":1}]"""))), "read"));
+        // any other code may be a deny: it restricts, it never grants
+        MFilesSecurityMapper.Mapped mapped = m.fromPermissions(Optional.of(json("""
+                [{"UserOrGroupID":5,"IsGroup":true,"ReadPermission":1},
+                 {"UserOrGroupID":9,"IsGroup":false,"ReadPermission":2},
+                 {"UserOrGroupID":7,"IsGroup":true,"ReadPermission":0}]""")));
+        assertEquals(List.of("mfiles:group:5"), identities(mapped, "read"));
+        assertEquals(List.of("mfiles:user:9", "mfiles:group:7"), identities(mapped, "deny"));
+    }
+
+    @Test
+    void inactiveComponentsAndTheNamedAclDefinitionAreIgnored() throws Exception {
+        MFilesSecurityMapper.Mapped mapped = mapper(Map.of()).fromPermissions(Optional.of(json("""
+                {"AccessControlList":{
+                   "CustomComponent":{"IsActive":true,"AccessControlEntries":[{"UserOrGroupID":12,"IsGroup":false,"ReadPermission":1}]},
+                   "AutomaticComponents":[{"IsActive":false,"AccessControlEntries":[{"UserOrGroupID":14,"IsGroup":false,"ReadPermission":1}]}]},
+                 "NamedACL":{"AccessControlList":{"CustomComponent":{"IsActive":true,
+                   "AccessControlEntries":[{"UserOrGroupID":8,"IsGroup":true,"ReadPermission":1}]}}}}""")));
+        assertEquals(List.of("mfiles:user:12"), identities(mapped, "read"));
     }
 
     @Test

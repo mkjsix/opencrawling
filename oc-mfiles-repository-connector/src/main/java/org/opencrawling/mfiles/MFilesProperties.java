@@ -65,8 +65,8 @@ import java.util.Optional;
  * @param principalFormat      {@code TOKEN}: identities as {@code mfiles:user:<id>} / {@code mfiles:group:<id>} (the
  *                             ManifoldCF M-Files connector's tokens); {@code NAME}: resolved through the users and user
  *                             groups value lists, falling back to the token when a name is unknown
- * @param usersValueList       value list holding the users ({@code NAME} format)
- * @param userGroupsValueList  value list holding the user groups ({@code NAME} format)
+ * @param usersValueList       value list holding the users ({@code NAME} format); built-in list 6, verified on a real vault
+ * @param userGroupsValueList  value list holding the user groups ({@code NAME} format); built-in list 16, verified
  * @param qualifyPrincipals    prefix every identity with the vault GUID; M-Files user and group ids are per vault
  * @param emitDeletes          search deleted objects too ({@code d=include}) and send DELETE tombstones for them
  * @param incrementalEnabled   keep a crawl state between runs: search from the last watermark, skip unchanged objects,
@@ -175,8 +175,8 @@ public record MFilesProperties(
                 list(value(c, "fallbackPrincipals", "")),
                 integers(value(c, "publicGroupIds", "")),
                 "name".equalsIgnoreCase(value(c, "principalFormat", "token")) ? PrincipalFormat.NAME : PrincipalFormat.TOKEN,
-                integer(c, "usersValueList", 16),
-                integer(c, "userGroupsValueList", 17),
+                integer(c, "usersValueList", 6),
+                integer(c, "userGroupsValueList", 16),
                 bool(c, "qualifyPrincipals", false),
                 bool(c, "emitDeletes", true),
                 bool(c, "incrementalEnabled", false),

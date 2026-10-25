@@ -365,15 +365,15 @@ class MFilesRepositoryConnectorTest {
     void nameFormatResolvesPrincipalsThroughTheValueListsOncePerScan() throws Exception {
         mfiles.body("GET /objects?o=0&d=include&limit=500", "application/json",
                 "{\"Items\":[" + MockMFiles.fixture("object-48192.json") + "]}");
-        mfiles.json("GET /valuelists/16/items", "users.json");
-        mfiles.json("GET /valuelists/17/items", "user-groups.json");
+        mfiles.json("GET /valuelists/6/items", "users.json");
+        mfiles.json("GET /valuelists/16/items", "user-groups.json");
         List<RepositoryDocument> documents = scan(connector(Map.of("principalFormat", "name", "includeFiles", "false")), "default");
         RepositoryDocument nda = documents.getFirst();
         assertEquals("sarah.connor,legal-department", nda.acl());
         assertTrue(nda.security().permissions().contains(new PermissionRule("mfiles:user:9", "user", "mfiles:user:9", "deny")),
                 "an unknown user keeps its token");
+        assertEquals(1, mfiles.count("GET /valuelists/6/items"));
         assertEquals(1, mfiles.count("GET /valuelists/16/items"));
-        assertEquals(1, mfiles.count("GET /valuelists/17/items"));
     }
 
     @Test

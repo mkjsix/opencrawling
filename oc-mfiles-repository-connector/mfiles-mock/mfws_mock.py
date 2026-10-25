@@ -77,7 +77,7 @@ DOCUMENT_CLASSES = [14, 22, 5, 40]
 # MFDataType: 1 Text, 2 Integer, 3 Floating, 5 Date, 7 Timestamp, 8 Boolean, 9 Lookup, 10 MultiSelectLookup, 13 MultiLineText
 PROPERTY_DEFS = [
     (0, "Name or title", 1, 0), (20, "Created", 7, 0), (21, "Last modified", 7, 0), (22, "Single file", 8, 0),
-    (23, "Last modified by", 9, 16), (25, "Created by", 9, 16), (38, "Workflow", 9, 7), (39, "State", 9, 8),
+    (23, "Last modified by", 9, 6), (25, "Created by", 9, 6), (38, "Workflow", 9, 7), (39, "State", 9, 8),
     (100, "Class", 9, 1), (1020, "Customer", 9, CUSTOMER), (1021, "Contract Value", 3, 0), (1022, "Effective Date", 5, 0),
     (1023, "Signed", 8, 0), (1024, "Tags", 10, 200), (1025, "Department", 9, 201), (1026, "Notes", 13, 0),
     (1027, "Country", 1, 0),
@@ -85,8 +85,8 @@ PROPERTY_DEFS = [
 USER_ACCOUNTS = {12: "sarah.connor", 14: "alex.vance", 15: "maya.collins", 16: "jordan.lee", 20: "crawler"}
 USER_GROUPS = {1: "All internal users", 5: "legal-department", 6: "finance", 7: "executive-management", 8: "sales"}
 VALUE_LISTS = {
-    16: USER_ACCOUNTS,
-    17: USER_GROUPS,
+    6: USER_ACCOUNTS,   # M-Files built-in value list 6: users
+    16: USER_GROUPS,    # built-in value list 16: user groups
     200: {1: "Legal", 2: "Vendor", 3: "Confidential", 4: "Renewal", 5: "Board"},
     201: {1: "Legal", 2: "Finance", 3: "Procurement", 4: "Sales", 5: "IT"},
     7: {1: "Contract approval"},
@@ -166,7 +166,7 @@ class Vault:
             {"custom": [(5, True, "Allow"), (12, False, "Allow")]},
             {"custom": [(5, True, "Allow"), (7, True, "Allow"), (15, False, "Deny")], "named": [(5, True, "Allow")]},
             {"custom": [(6, True, "Allow")], "pseudo": [(PSEUDO_PROJECT_MANAGER, "Allow")]},
-            {"custom": [(14, False, "Allow"), (12, False, "Allow")]},
+            {"custom": [(14, False, "Allow"), (12, False, "Allow")], "inactive": [(14, False, "Allow")]},
             {"custom": []},
         ]
         return patterns[i % len(patterns)]
@@ -297,17 +297,36 @@ class Vault:
         return [{"PropertyDef": pd, "TypedValue": t} for pd, t in props]
 
     def permissions(self, obj):
-        def entries(items):
-            return [{"UserOrGroupID": i, "IsGroup": g, "ReadPermission": p, "EditPermission": p} for i, g, p in items]
+        """The payload shape of a real M-Files server (verified): numeric permission codes (1 = allow; the mock uses 2 for
+        deny, an assumption, the connector treats every code other than 1 as a deny), IsPsudoUser (M-Files' spelling),
+        the effective AccessControlList with its CustomComponent and AutomaticComponents, and the NamedACL definition
+        block, which a client must not read as part of the effective permissions."""
+        def entry(i, group, permission, pseudo=False):
+            code = 1 if permission == "Allow" else 2
+            return {"ChangePermissionsPermission": code, "EditPermission": code, "ReadPermission": code,
+                    "DeletePermission": code, "IsGroup": group, "UserOrGroupID": i, "IsPsudoUser": pseudo,
+                    "HasConcreteUserOrGruopID": not pseudo}
 
-        custom = entries(obj.acl.get("custom", []))
-        custom += [{"UserOrGroupID": pid, "IsGroup": False, "IsPseudoUser": True, "ReadPermission": p}
-                   for pid, p in obj.acl.get("pseudo", [])]
-        acl = {"CustomComponent": {"AccessControlEntries": custom}}
-        if "named" in obj.acl:
-            acl["NamedACLComponent"] = {"NamedACL": {"ID": 3, "Name": "Legal only"},
-                                        "AccessControlEntries": entries(obj.acl["named"])}
-        return {"AccessControlList": acl}
+        def component(entries, active=True):
+            return {"AccessControlEntries": entries, "CanDeactivate": False, "CurrentUserBinding": -2147483648,
+                    "HasCurrentUser": False, "HasCurrentUserBinding": False, "HasNamedACLLink": False,
+                    "HasPseudoUsers": any(e["IsPsudoUser"] for e in entries), "IsActive": active, "NamedACLLink": -1}
+
+        custom = [entry(i, g, p) for i, g, p in obj.acl.get("custom", [])]
+        custom += [entry(pid, False, p, pseudo=True) for pid, p in obj.acl.get("pseudo", [])]
+        automatic = []
+        if "named" in obj.acl:  # a restricting component, e.g. a workflow state's permissions
+            automatic.append(component([entry(i, g, p) for i, g, p in obj.acl["named"]]))
+        if "inactive" in obj.acl:  # switched off: it must not restrict anything
+            automatic.append(component([entry(i, g, p) for i, g, p in obj.acl["inactive"]], active=False))
+        acl = {"IsUnSpecified": False, "CheckedOutToUserID": -2147483648, "HasCheckedOutToUserID": False,
+               "IsFullyAuthoritative": False, "AutomaticComponents": automatic, "CustomComponent": component(custom)}
+        # the named ACL's own definition; deliberately different from the effective list, which a client must use instead
+        named_definition = {"ID": 3, "Name": "Legal only", "IsNamedACL": True, "HasAutomaticComponent": False,
+                            "IsUnSpecified": False,
+                            "AccessControlList": {"AutomaticComponents": [], "CustomComponent": component([entry(8, True, "Allow")])}}
+        return {"AccessControlList": acl, "CustomACL": True, "NamedACL": named_definition,
+                "ObjVer": {"Version": obj.latest.number, "VersionType": 4, "ID": obj.id, "Type": obj.type}}
 
     def effective_tokens(self, obj):
         """What a VAF app computes inside the vault: pseudo-users resolved, components intersected, denies separate."""

@@ -82,7 +82,10 @@ class MFilesLiveProbeTest {
         try (PrintStream out = new PrintStream(Files.newOutputStream(report), true, StandardCharsets.UTF_8);
              MFilesClient client = MFilesRepositoryConnector.newClient(settings, Duration.ofSeconds(60), 1)) {
             client.login();
-            JsonNode vault = client.getVault();
+            JsonNode vault = client.getVault().deepCopy();
+            if (vault instanceof com.fasterxml.jackson.databind.node.ObjectNode object && object.has("Authentication")) {
+                object.put("Authentication", "<redacted>"); // a vault-scoped token: never written to the report
+            }
             out.println("== GET /session/vault\n" + vault.toPrettyString());
             out.println("== GET /structure/objecttypes: " + MFilesClient.items(client.getObjectTypes()).size() + " object types");
             out.println("== GET /structure/properties: " + MFilesClient.items(client.getPropertyDefinitions()).size()
