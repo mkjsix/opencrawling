@@ -97,7 +97,8 @@ public class OpenCrawlingApplication {
             if (crawlOnStartup) {
                 String defaultTarget = "alfresco".equalsIgnoreCase(repositoryConnectorType) ? "-root-" : 
                                       ("cmis".equalsIgnoreCase(repositoryConnectorType) ? "/" : 
-                                      ("jdbc".equalsIgnoreCase(repositoryConnectorType) ? "" : "default"));
+                                      ("jdbc".equalsIgnoreCase(repositoryConnectorType) ? "" : 
+                                      ("openarch".equalsIgnoreCase(repositoryConnectorType) ? "00000000-0000-0000-0000-000000000000" : "default")));
                 String targetPath = (scanPath != null && !scanPath.isBlank()) ? scanPath : defaultTarget;
                 if ((scanPath == null || scanPath.isBlank()) && 
                     !"camunda".equalsIgnoreCase(repositoryConnectorType) && 
@@ -106,6 +107,7 @@ public class OpenCrawlingApplication {
                     !"aps".equalsIgnoreCase(repositoryConnectorType) &&
                     !"cmis".equalsIgnoreCase(repositoryConnectorType) &&
                     !"doxis".equalsIgnoreCase(repositoryConnectorType) &&
+                    !"openarch".equalsIgnoreCase(repositoryConnectorType) &&
                     !"jdbc".equalsIgnoreCase(repositoryConnectorType)) {
                     log.warn("Crawl on startup is enabled, but spring.opencrawling.scan-path is not set. Skipping sample crawl.");
                 } else {

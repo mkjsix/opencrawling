@@ -516,6 +516,17 @@ class OpenCrawlingCliTest {
             httpServer.stop(0);
         }
     }
+
+    @Test
+    void testConnectorTestCommandHelpAndAlias() {
+        CommandLine cmd = new CommandLine(new OpenCrawlingCliCommand());
+        outContent.reset();
+        int exitCode = cmd.execute("connector", "test", "--help");
+        assertEquals(0, exitCode);
+        String out = outContent.toString();
+        assertTrue(out.contains("Test connection health against a target repository or output connector"));
+        assertTrue(out.contains("--name"));
+    }
 }
 
 
