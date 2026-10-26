@@ -983,6 +983,12 @@ We provide fully automated end-to-end integration test scripts that build, boot,
     ```
     This script verifies bidirectional OpenArch harvesting, Parquet vector bridging conforming to `embedding.avsc`, Zero-Trust ACL preservation, and MCP search/fetch backend tools.
 
+*   **Hyland OpenArch Decoupled Pipeline**:
+    ```bash
+    ./scripts/test-openarch-decoupled.sh
+    ```
+    This script tests the entire decoupled architecture with Hyland OpenArch, validating document ingestion, Parquet vector bridging conforming to `embedding.avsc`, Kafka consumers (`oc-crawler`, `oc-ingestion-consumer`, `oc-embedding-consumer`, `oc-writer-consumer`), paged HXQL harvesting with Java 25 Virtual Threads, Secure MCP Server endpoints (`openarch_search`, `openarch_fetch_document`), and OIS tombstone deletions.
+
 *   **OpenCrawling CLI (oc) Integration Test Suites**:
     ```bash
     # Local CLI Integration Suite
