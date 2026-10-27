@@ -109,6 +109,7 @@ public class OpenCrawlingApplication {
                     !"aps".equalsIgnoreCase(repositoryConnectorType) &&
                     !"cmis".equalsIgnoreCase(repositoryConnectorType) &&
                     !"doxis".equalsIgnoreCase(repositoryConnectorType) &&
+                    !"sharepoint".equalsIgnoreCase(repositoryConnectorType) &&
                     !"mfiles".equalsIgnoreCase(repositoryConnectorType) &&
                     !"openarch".equalsIgnoreCase(repositoryConnectorType) &&
                     !"jdbc".equalsIgnoreCase(repositoryConnectorType)) {

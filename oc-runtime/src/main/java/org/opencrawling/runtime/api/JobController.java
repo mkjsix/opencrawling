@@ -311,6 +311,13 @@ public class JobController {
                         resolvedConnector = new org.opencrawling.doxis.DoxisRepositoryConnector(doxisSettings);
                         log.info("Successfully resolved dynamic Doxis repository connector for '{}' (repository '{}', {} mode)",
                                 doxisSettings.url(), doxisSettings.repositoryId(), doxisSettings.crawlMode());
+                    } else if (connConfig.className().contains("SharePointRepositoryConnector")) {
+                        org.opencrawling.sharepoint.SharePointProperties sharePointSettings =
+                                org.opencrawling.sharepoint.SharePointProperties.fromConfiguration(connConfig.configuration());
+                        resolvedConnector = new org.opencrawling.sharepoint.SharePointRepositoryConnector(sharePointSettings);
+                        log.info("Successfully resolved dynamic SharePoint repository connector for '{}' ({} mode)",
+                                sharePointSettings.siteUrl() != null ? sharePointSettings.siteUrl() : sharePointSettings.siteId(),
+                                sharePointSettings.crawlMode());
                     } else if (connConfig.className().contains("MFilesRepositoryConnector")) {
                         org.opencrawling.mfiles.MFilesProperties mfilesSettings =
                                 org.opencrawling.mfiles.MFilesProperties.fromConfiguration(connConfig.configuration());

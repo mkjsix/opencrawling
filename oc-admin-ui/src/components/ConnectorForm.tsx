@@ -156,6 +156,7 @@ export default function ConnectorForm() {
   const vespaEndpointValue = watch('configuration.vespaEndpoint')
   const solrMode = watch('configuration.solrMode') || 'standalone'
   const doxisAuthType = watch('configuration.authType') || 'basic'
+  const sharePointCrawlMode = watch('configuration.crawlMode') || 'delta'
   const mfilesAuthType = watch('configuration.authType') || 'token'
   const mfilesCrawlMode = watch('configuration.crawlMode') || 'search'
   const openarchCrawlMode = watch('configuration.crawlMode') || 'QUERY'
@@ -253,6 +254,7 @@ export default function ConnectorForm() {
       { label: 'Apache StormCrawler Web Engine', value: 'org.opencrawling.stormcrawler.StormCrawlerRepositoryConnector' },
       { label: 'OASIS CMIS Repository (1.0 / 1.1)', value: 'org.opencrawling.cmis.CmisRepositoryConnector' },
       { label: 'Doxis Repository (Intelligent Content Automation)', value: 'org.opencrawling.doxis.DoxisRepositoryConnector' },
+      { label: 'Microsoft SharePoint (Microsoft Graph API)', value: 'org.opencrawling.sharepoint.SharePointRepositoryConnector' },
       { label: 'M-Files Repository (Knowledge Work Automation)', value: 'org.opencrawling.mfiles.MFilesRepositoryConnector' },
       { label: 'Relational Database (JDBC)', value: 'org.opencrawling.jdbc.JdbcRepositoryConnector' },
       { label: 'gRPC Push Ingestion Connector', value: 'org.opencrawling.push.grpc.GrpcPushRepositoryConnector' },
@@ -1631,6 +1633,269 @@ export default function ConnectorForm() {
                           {...register('configuration.stateDirectory')}
                           placeholder="data/doxis-state"
                           defaultValue="data/doxis-state"
+                          className="w-full bg-background border border-border rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-primary/50 outline-none font-mono"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Microsoft SharePoint (Microsoft Graph API) */}
+                  {selectedClass === 'org.opencrawling.sharepoint.SharePointRepositoryConnector' && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div role="note" className="col-span-2 flex items-start gap-3 rounded-md border border-amber-500/20 bg-amber-400/10 px-3 py-2 text-sm">
+                        <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
+                        <p>
+                          <span className="font-medium">Requires a Microsoft Entra ID app registration.</span>{' '}
+                          Grant it the Microsoft Graph application permission Sites.Read.All (or Sites.Selected with read access
+                          to this site), have an administrator consent, and create a client secret. See the connector&apos;s
+                          README, section Prerequisites.
+                        </p>
+                      </div>
+                      <div className="space-y-2 col-span-2">
+                        <label className="text-sm font-medium">SharePoint Site URL</label>
+                        <input
+                          {...register('configuration.siteUrl', { required: true })}
+                          placeholder="https://contoso.sharepoint.com/sites/engineering"
+                          className="w-full bg-background border border-border rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-primary/50 outline-none font-mono"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">Entra ID Tenant ID</label>
+                        <input
+                          {...register('configuration.tenantId', { required: true })}
+                          placeholder="72f988bf-86f1-41af-91ab-2d7cd011db47"
+                          className="w-full bg-background border border-border rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-primary/50 outline-none font-mono"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">Application (Client) ID</label>
+                        <input
+                          {...register('configuration.clientId', { required: true })}
+                          placeholder="00000000-0000-0000-0000-000000000000"
+                          className="w-full bg-background border border-border rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-primary/50 outline-none font-mono"
+                        />
+                      </div>
+                      <div className="space-y-2 col-span-2">
+                        <label className="text-sm font-medium">Client Secret</label>
+                        <input
+                          type="password"
+                          {...register('configuration.clientSecret')}
+                          placeholder=""
+                          className="w-full bg-background border border-border rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-primary/50 outline-none font-mono"
+                        />
+                      </div>
+                      <div className="space-y-2 col-span-2">
+                        <label className="text-sm font-medium">Document Libraries (Comma-Separated)</label>
+                        <input
+                          {...register('configuration.driveNames')}
+                          placeholder="empty = every document library, e.g. Documents,Contracts"
+                          className="w-full bg-background border border-border rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-primary/50 outline-none font-mono"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">Crawl Mode</label>
+                        <select
+                          {...register('configuration.crawlMode')}
+                          defaultValue="delta"
+                          className="w-full bg-background border border-border rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-primary/50 outline-none"
+                        >
+                          <option value="delta">Delta Query (Incremental)</option>
+                          <option value="tree">Folder Tree Traversal (Permission Reconciliation)</option>
+                        </select>
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">User Identities</label>
+                        <select
+                          {...register('configuration.userIdentity')}
+                          defaultValue="email"
+                          className="w-full bg-background border border-border rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-primary/50 outline-none"
+                        >
+                          <option value="email">E-Mail / User Principal Name</option>
+                          <option value="id">Entra Object ID</option>
+                        </select>
+                      </div>
+                      {sharePointCrawlMode === 'tree' && (
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium">Root Folder Path</label>
+                          <input
+                            {...register('configuration.rootFolderPath')}
+                            placeholder="/ or /Specs/2026"
+                            defaultValue="/"
+                            className="w-full bg-background border border-border rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-primary/50 outline-none font-mono"
+                          />
+                        </div>
+                      )}
+                      <div className="space-y-2 col-span-2">
+                        <label className="text-sm font-medium">Fallback Readers (When No Permissions Are Readable)</label>
+                        <input
+                          {...register('configuration.fallbackPrincipals')}
+                          placeholder="empty = nobody, or group:records,user:auditor@contoso.com"
+                          className="w-full bg-background border border-border rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-primary/50 outline-none font-mono"
+                        />
+                      </div>
+                      <div className="col-span-2 pt-2">
+                        <p className="text-sm font-medium">Broad Access Grants</p>
+                        <p className="text-xs text-muted-foreground">
+                          Leave empty to grant nothing through them. Enter an identity your callers carry, or public to make
+                          such files readable by every caller.
+                        </p>
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">“Everyone Except External Users” Identity</label>
+                        <input
+                          {...register('configuration.everyoneExceptExternalIdentity')}
+                          placeholder="e.g. contoso-employees"
+                          className="w-full bg-background border border-border rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-primary/50 outline-none font-mono"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">“Everyone” Identity</label>
+                        <input
+                          {...register('configuration.everyoneIdentity')}
+                          placeholder="e.g. contoso-everyone"
+                          className="w-full bg-background border border-border rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-primary/50 outline-none font-mono"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">Organization Sharing Links Identity</label>
+                        <input
+                          {...register('configuration.organizationLinkIdentity')}
+                          placeholder="e.g. contoso-employees"
+                          className="w-full bg-background border border-border rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-primary/50 outline-none font-mono"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">Anonymous Sharing Links Identity</label>
+                        <input
+                          {...register('configuration.anonymousLinkIdentity')}
+                          placeholder="empty recommended"
+                          className="w-full bg-background border border-border rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-primary/50 outline-none font-mono"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">Page Size</label>
+                        <input
+                          type="number"
+                          {...register('configuration.batchSize')}
+                          placeholder="100"
+                          defaultValue={100}
+                          className="w-full bg-background border border-border rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-primary/50 outline-none font-mono"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">Parallelism</label>
+                        <input
+                          type="number"
+                          {...register('configuration.parallelism')}
+                          placeholder="4"
+                          defaultValue={4}
+                          className="w-full bg-background border border-border rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-primary/50 outline-none font-mono"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">Max File Size (Bytes)</label>
+                        <input
+                          type="number"
+                          {...register('configuration.maxFileSizeBytes')}
+                          placeholder="52428800"
+                          defaultValue={52428800}
+                          className="w-full bg-background border border-border rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-primary/50 outline-none font-mono"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">Timeout (Seconds)</label>
+                        <input
+                          type="number"
+                          {...register('configuration.timeoutSeconds')}
+                          placeholder="30"
+                          defaultValue={30}
+                          className="w-full bg-background border border-border rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-primary/50 outline-none font-mono"
+                        />
+                      </div>
+                      <div className="space-y-2 flex items-center gap-2 pt-6">
+                        <input
+                          type="checkbox"
+                          id="includeContentStreamSharePoint"
+                          {...register('configuration.includeContentStream')}
+                          defaultChecked={true}
+                          className="rounded border-border text-primary focus:ring-primary/50"
+                        />
+                        <label htmlFor="includeContentStreamSharePoint" className="text-sm font-medium cursor-pointer">
+                          Include Content Streams
+                        </label>
+                      </div>
+                      <div className="space-y-2 flex items-center gap-2 pt-6">
+                        <input
+                          type="checkbox"
+                          id="includeCustomFieldsSharePoint"
+                          {...register('configuration.includeCustomFields')}
+                          defaultChecked={true}
+                          className="rounded border-border text-primary focus:ring-primary/50"
+                        />
+                        <label htmlFor="includeCustomFieldsSharePoint" className="text-sm font-medium cursor-pointer">
+                          Include Custom List Item Fields
+                        </label>
+                      </div>
+                      <div className="space-y-2 flex items-center gap-2 pt-6">
+                        <input
+                          type="checkbox"
+                          id="includeAclsSharePoint"
+                          {...register('configuration.includeAcls')}
+                          defaultChecked={true}
+                          className="rounded border-border text-primary focus:ring-primary/50"
+                        />
+                        <label htmlFor="includeAclsSharePoint" className="text-sm font-medium cursor-pointer">
+                          Include Entra ID Permissions & ACLs
+                        </label>
+                      </div>
+                      <div className="space-y-2 flex items-center gap-2 pt-6">
+                        <input
+                          type="checkbox"
+                          id="includeSubfoldersSharePoint"
+                          {...register('configuration.includeSubfolders')}
+                          defaultChecked={true}
+                          className="rounded border-border text-primary focus:ring-primary/50"
+                        />
+                        <label htmlFor="includeSubfoldersSharePoint" className="text-sm font-medium cursor-pointer">
+                          Include Subfolders (Tree Mode)
+                        </label>
+                      </div>
+                      <div className="space-y-2 flex items-center gap-2 pt-6">
+                        <input
+                          type="checkbox"
+                          id="incrementalSharePoint"
+                          {...register('configuration.incremental')}
+                          defaultChecked={true}
+                          className="rounded border-border text-primary focus:ring-primary/50"
+                        />
+                        <label htmlFor="incrementalSharePoint" className="text-sm font-medium cursor-pointer">
+                          Incremental (Keep Delta Link and Item State)
+                        </label>
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">State Directory</label>
+                        <input
+                          {...register('configuration.stateDirectory')}
+                          placeholder="data/sharepoint-state"
+                          defaultValue="data/sharepoint-state"
+                          className="w-full bg-background border border-border rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-primary/50 outline-none font-mono"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">Microsoft Graph URL (Sovereign Clouds)</label>
+                        <input
+                          {...register('configuration.graphUrl')}
+                          placeholder="https://graph.microsoft.com/v1.0"
+                          defaultValue="https://graph.microsoft.com/v1.0"
+                          className="w-full bg-background border border-border rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-primary/50 outline-none font-mono"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">Entra ID Authority URL (Sovereign Clouds)</label>
+                        <input
+                          {...register('configuration.authorityUrl')}
+                          placeholder="https://login.microsoftonline.com"
+                          defaultValue="https://login.microsoftonline.com"
                           className="w-full bg-background border border-border rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-primary/50 outline-none font-mono"
                         />
                       </div>
