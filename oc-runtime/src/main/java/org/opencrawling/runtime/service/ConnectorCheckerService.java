@@ -134,6 +134,8 @@ public class ConnectorCheckerService {
             // --- SharePoint Repository Connector ---
             if (className.contains("SharePointRepositoryConnector")) {
                 return checkSharePointRepository(config);
+            }
+
             // --- M-Files Repository Connector ---
             if (className.contains("MFilesRepositoryConnector")) {
                 return checkMFilesRepository(config);
@@ -546,6 +548,16 @@ public class ConnectorCheckerService {
             return new ConnectionCheckResult(true, "Successfully authenticated to Microsoft Graph; SharePoint site '"
                     + site.path("displayName").asText(site.path("webUrl").asText()) + "' is accessible with " + libraries.size()
                     + " document libraries " + libraries + ".", site.path("id").asText(null));
+        } catch (Exception e) {
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+            return new ConnectionCheckResult(false, "Failed to connect to SharePoint through " + settings.graphUrl() + ": "
+                    + e.getMessage() + " " + SharePointRepositoryConnector.PREREQUISITES_NOTICE, e.toString());
+        }
+    }
+
+    /**
      * Logs in (vault-scoped token, credential headers or bearer), reads the session's vault and lists its object types: a
      * vault-level call, so an anonymous or server-level token fails here instead of on the first crawl.
      */

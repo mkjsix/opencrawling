@@ -188,6 +188,10 @@ class ConnectorCheckerServiceTest {
             assertTrue(wrongLibrary.message().contains("[Contracts]"));
         } finally {
             graph.stop(0);
+        }
+    }
+
+    @Test
     void testCheckMFilesConnectorNotConfigured() {
         ConnectorDTO connector = new ConnectorDTO("MFiles_Test", "Test M-Files", "repository",
                 "org.opencrawling.mfiles.MFilesRepositoryConnector", 10, Map.of("url", "http://127.0.0.1:59999/REST"));

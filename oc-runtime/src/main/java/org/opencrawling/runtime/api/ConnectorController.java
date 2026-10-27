@@ -159,6 +159,7 @@ public class ConnectorController {
             Map.entry("parallelism", "4"),
             Map.entry("maxRetries", "5"),
             Map.entry("timeoutSeconds", "30")
+        )));
         defaults.add(new ConnectorDTO("MFiles_Repository", "M-Files Vault (M-Files Web Service REST API)", "repository", "org.opencrawling.mfiles.MFilesRepositoryConnector", 10, Map.ofEntries(
             Map.entry("url", "https://localhost/REST"),
             Map.entry("vaultGuid", ""),
