@@ -372,6 +372,12 @@ export default function JobTable({ setActiveView }: JobTableProps) {
           placeholder: "e.g. default, SELECT * FROM DB1 WHERE OBJECTNAME LIKE 'NDA*', or an e-file UUID",
           description: 'Use default for the connector configuration. A SELECT statement replaces the search; in folder mode an e-file UUID replaces the root e-file.'
         };
+      case 'org.opencrawling.mfiles.MFilesRepositoryConnector':
+        return {
+          label: 'Search Conditions / Quick Search / View Path',
+          placeholder: 'e.g. default, p1020=5, contract, or v101',
+          description: 'Use default for the connector configuration. MFWS conditions (with =) or plain text (quick search) replace the search; a view path such as v101 crawls that view.'
+        };
       case 'org.opencrawling.iceberg.IcebergRepositoryConnector':
         return {
           label: 'Iceberg Table Name',

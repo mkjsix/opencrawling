@@ -311,6 +311,12 @@ public class JobController {
                         resolvedConnector = new org.opencrawling.doxis.DoxisRepositoryConnector(doxisSettings);
                         log.info("Successfully resolved dynamic Doxis repository connector for '{}' (repository '{}', {} mode)",
                                 doxisSettings.url(), doxisSettings.repositoryId(), doxisSettings.crawlMode());
+                    } else if (connConfig.className().contains("MFilesRepositoryConnector")) {
+                        org.opencrawling.mfiles.MFilesProperties mfilesSettings =
+                                org.opencrawling.mfiles.MFilesProperties.fromConfiguration(connConfig.configuration());
+                        resolvedConnector = new org.opencrawling.mfiles.MFilesRepositoryConnector(mfilesSettings);
+                        log.info("Successfully resolved dynamic M-Files repository connector for '{}' (vault '{}', {} mode)",
+                                mfilesSettings.url(), mfilesSettings.vaultGuid(), mfilesSettings.crawlMode());
                     } else if (connConfig.className().contains("Jdbc")) {
                         String url = connConfig.configuration().getOrDefault("url", "jdbc:h2:mem:opencrawling;DB_CLOSE_DELAY=-1");
                         String driverClassName = connConfig.configuration().getOrDefault("driverClassName", connConfig.configuration().getOrDefault("driver-class-name", ""));

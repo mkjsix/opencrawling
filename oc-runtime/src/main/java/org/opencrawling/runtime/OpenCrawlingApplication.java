@@ -74,13 +74,15 @@ public class OpenCrawlingApplication {
             log.info("--- OpenCrawling Bootstrap ---");
             log.info("Requested Repository Connector Type: {}", repositoryConnectorType);
 
+            // a connector named after the type wins; the "file" match is only a fallback, otherwise type "mfiles" could
+            // select the FileSystem connector
+            String connectorType = repositoryConnectorType.toLowerCase();
             RepositoryConnector activeConnector = repositoryConnectors.stream()
-                .filter(c -> {
-                    String className = c.getClass().getSimpleName().toLowerCase();
-                    String connectorType = repositoryConnectorType.toLowerCase();
-                    return className.contains(connectorType) || (connectorType.contains("file") && className.contains("file"));
-                })
+                .filter(c -> c.getClass().getSimpleName().toLowerCase().contains(connectorType))
                 .findFirst()
+                .or(() -> repositoryConnectors.stream()
+                    .filter(c -> connectorType.contains("file") && c.getClass().getSimpleName().toLowerCase().contains("file"))
+                    .findFirst())
                 .orElse(repositoryConnectors.isEmpty() ? null : repositoryConnectors.get(0));
 
             if (activeConnector == null) {
@@ -107,6 +109,7 @@ public class OpenCrawlingApplication {
                     !"aps".equalsIgnoreCase(repositoryConnectorType) &&
                     !"cmis".equalsIgnoreCase(repositoryConnectorType) &&
                     !"doxis".equalsIgnoreCase(repositoryConnectorType) &&
+                    !"mfiles".equalsIgnoreCase(repositoryConnectorType) &&
                     !"openarch".equalsIgnoreCase(repositoryConnectorType) &&
                     !"jdbc".equalsIgnoreCase(repositoryConnectorType)) {
                     log.warn("Crawl on startup is enabled, but spring.opencrawling.scan-path is not set. Skipping sample crawl.");

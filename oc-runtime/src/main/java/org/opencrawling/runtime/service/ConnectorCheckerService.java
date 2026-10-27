@@ -34,6 +34,9 @@ import com.fasterxml.jackson.databind.JsonNode;
 import org.opencrawling.doxis.DoxisRepositoryConnector;
 import org.opencrawling.doxis.DoxisProperties;
 import org.opencrawling.doxis.client.DoxisClient;
+import org.opencrawling.mfiles.MFilesClient;
+import org.opencrawling.mfiles.MFilesProperties;
+import org.opencrawling.mfiles.MFilesRepositoryConnector;
 import org.opencrawling.runtime.api.ConnectorController.ConnectorDTO;
 import org.springframework.stereotype.Service;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -123,6 +126,11 @@ public class ConnectorCheckerService {
             // --- Doxis Repository Connector ---
             if (className.contains("DoxisRepositoryConnector")) {
                 return checkDoxisRepository(config);
+            }
+
+            // --- M-Files Repository Connector ---
+            if (className.contains("MFilesRepositoryConnector")) {
+                return checkMFilesRepository(config);
             }
 
             // --- CMIS Repository Connector ---
@@ -502,6 +510,33 @@ public class ConnectorCheckerService {
         } catch (Exception e) {
             return new ConnectionCheckResult(false, "Failed to connect to Doxis at " + settings.url() + ": " + e.getMessage() + " "
                     + DoxisRepositoryConnector.LICENCE_NOTICE, e.toString());
+        }
+    }
+
+    /**
+     * Logs in (vault-scoped token, credential headers or bearer), reads the session's vault and lists its object types: a
+     * vault-level call, so an anonymous or server-level token fails here instead of on the first crawl.
+     */
+    private ConnectionCheckResult checkMFilesRepository(Map<String, String> config) {
+        MFilesProperties settings = MFilesProperties.fromConfiguration(config);
+        List<String> problems = settings.validate();
+        if (!problems.isEmpty()) {
+            return new ConnectionCheckResult(false, "M-Files repository connector is not configured: " + String.join(" ", problems)
+                    + " " + MFilesRepositoryConnector.LICENCE_NOTICE, null);
+        }
+        try (MFilesClient client = MFilesRepositoryConnector.newClient(settings, Duration.ofSeconds(30), 0)) {
+            client.login();
+            JsonNode vault = client.getVault();
+            int objectTypes = MFilesClient.items(client.getObjectTypes()).size();
+            return new ConnectionCheckResult(true, "Successfully authenticated to M-Files at " + client.getBaseUrl() + "; vault '"
+                    + vault.path("Name").asText(settings.vaultGuid()) + "' is accessible (" + objectTypes + " object types). "
+                    + MFilesRepositoryConnector.LICENCE_NOTICE, vault.path("GUID").asText(null));
+        } catch (Exception e) {
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+            return new ConnectionCheckResult(false, "Failed to connect to M-Files at " + settings.url() + ": " + e.getMessage() + " "
+                    + MFilesRepositoryConnector.LICENCE_NOTICE, e.toString());
         }
     }
 

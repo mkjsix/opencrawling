@@ -76,6 +76,7 @@ graph TD
         APS_Conn[Alfresco Process Services - oc-aps-repository-connector]
         CMIS_Conn[OASIS CMIS Repository - oc-cmis-repository-connector]
         Doxis_Repo_Conn[Doxis 4 Repository - oc-doxis-repository-connector]
+        MFiles_Repo_Conn[M-Files Vault - oc-mfiles-repository-connector]
         OpenArch_Repo_Conn[Hyland OpenArch Repository - oc-openarch-repository-connector]
         Iceberg_Conn[Iceberg Repository - oc-iceberg-repository-connector]
         Flowable_Conn[Flowable Repository - oc-flowable-repository-connector]
@@ -886,17 +887,39 @@ mvn spring-boot:run -pl oc-runtime -Dspring-boot.run.profiles=dev
 In the Admin UI it is the **Doxis Repository** repository connector. See
 [oc-doxis-repository-connector/README.md](oc-doxis-repository-connector/README.md).
 
-### Option A.8.c: Hyland OpenArch Federated Ingestion & Parquet Vector Bridging
+### Option A.8.c: M-Files Vault Crawling
 
-[![Hyland OpenArch](https://img.shields.io/badge/Hyland_OpenArch-Supported-4F46E5.svg?style=flat)](docs/Hyland-OpenArch-Integration.md)
+[![M-Files](https://img.shields.io/badge/M--Files-MFWS_REST-0072CE.svg?style=flat)](https://www.m-files.com/)
 
-OpenCrawling provides native, bidirectional integration with **Hyland OpenArch**:
+To crawl an [M-Files](https://www.m-files.com/) vault, select the M-Files repository connector and point it at the
+M-Files Web Service (MFWS):
 
-- **Repository Harvesting (`OpenArchRepositoryConnector`)**: Crawls documents and metadata via paged HXQL queries (`/api/query`) or folder traversal (`/api/objects/folder/{id}`), streams binary blobs (`/api/download/{id}`), applies incremental crawl filtering (`sys_modified`), and preserves Zero-Trust permissions using Java 25 Virtual Threads.
-- **Output Connector & Parquet Vector Bridge (`OpenArchOutputConnector`)**: Ingests documents into OpenArch (`/api/upload`), synchronizes Zero-Trust ACLs, and formats dense vectors into Apache Parquet embedding batches conforming strictly to OpenArch's schema (`embedding.avsc`).
-- **Model Context Protocol (MCP)**: Native tools `openarch_search` and `openarch_fetch_document` registered in `McpVectorServer` for Zero-Trust agentic retrieval.
+> **Prerequisites:** you need a licensed M-Files Server with the M-Files Web Service (REST API) enabled, and an M-Files
+> account with read access to the vault (or an OAuth2 / Entra ID client the vault accepts). OpenCrawling doesn't include
+> M-Files or any M-Files licence. See the [full prerequisites](oc-mfiles-repository-connector/README.md#prerequisites)
+> before configuring a crawl.
 
-See the complete [Hyland OpenArch Integration Guide](docs/Hyland-OpenArch-Integration.md) for architectural details and full configuration parameters.
+```bash
+SPRING_OPENCRAWLING_REPOSITORY_CONNECTOR_TYPE=mfiles \
+SPRING_OPENCRAWLING_CONNECTOR_TYPE=mfiles \
+SPRING_OPENCRAWLING_CONNECTOR_MFILES_URL=https://<mfiles-host>/REST \
+SPRING_OPENCRAWLING_CONNECTOR_MFILES_VAULT_GUID="{<vault-guid>}" \
+SPRING_OPENCRAWLING_CONNECTOR_MFILES_USERNAME=<user> \
+SPRING_OPENCRAWLING_CONNECTOR_MFILES_PASSWORD=<password> \
+SPRING_OPENCRAWLING_CONNECTOR_MFILES_CLASS_IDS=14,22 \
+mvn spring-boot:run -pl oc-runtime -Dspring-boot.run.profiles=dev
+```
+
+`MFilesRepositoryConnector` reads objects through the MFWS REST API.
+- **What it crawls:** MFWS searches by object type, class and conditions (`crawl-mode: search` / `all_objects`), an
+  M-Files view (`view`), or the change feed of a Vault Application Framework app (`vaf`).
+- **What each document carries:** the object's typed property values, its file (one OIS document per file for a
+  multi-file document), and its permissions as OIS permissions, deny by default.
+- **Deletes:** deleted objects become `DELETE` tombstones; incremental crawls also purge files an object no longer has.
+- **Sessions:** a scan uses one MFWS session and always ends it.
+
+In the Admin UI it is the **M-Files Repository** repository connector. See
+[oc-mfiles-repository-connector/README.md](oc-mfiles-repository-connector/README.md).
 
 ### Option A.9: Decoupled Apache SeaTunnel-Based Deployment
 

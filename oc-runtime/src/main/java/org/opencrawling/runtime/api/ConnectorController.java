@@ -136,6 +136,33 @@ public class ConnectorController {
             Map.entry("stateDirectory", "data/doxis-state"),
             Map.entry("tenantIsolation", "false")
         )));
+        defaults.add(new ConnectorDTO("MFiles_Repository", "M-Files Vault (M-Files Web Service REST API)", "repository", "org.opencrawling.mfiles.MFilesRepositoryConnector", 10, Map.ofEntries(
+            Map.entry("url", "https://localhost/REST"),
+            Map.entry("vaultGuid", ""),
+            Map.entry("authType", "token"),
+            Map.entry("username", ""),
+            Map.entry("password", ""),
+            Map.entry("domain", ""),
+            Map.entry("crawlMode", "search"),
+            Map.entry("objectType", "0"),
+            Map.entry("classIds", ""),
+            Map.entry("viewId", ""),
+            Map.entry("searchQuery", ""),
+            Map.entry("versionMode", "latest_only"),
+            Map.entry("includeFiles", "true"),
+            Map.entry("maxFileSizeBytes", "52428800"),
+            Map.entry("includeProperties", "true"),
+            Map.entry("includeAcls", "true"),
+            Map.entry("fallbackPrincipals", ""),
+            Map.entry("principalFormat", "token"),
+            Map.entry("emitDeletes", "true"),
+            Map.entry("incrementalEnabled", "false"),
+            Map.entry("modifiedAfter", ""),
+            Map.entry("batchSize", "500"),
+            Map.entry("parallelism", "4"),
+            Map.entry("timeoutSeconds", "30"),
+            Map.entry("stateDirectory", "data/mfiles-state")
+        )));
         defaults.add(new ConnectorDTO("Grpc_Push_Connector", "gRPC Push Streaming Ingestion", "repository", "org.opencrawling.push.grpc.GrpcPushRepositoryConnector", 100, Map.of(
             "port", "9096",
             "maxMessageSizeMb", "64",
