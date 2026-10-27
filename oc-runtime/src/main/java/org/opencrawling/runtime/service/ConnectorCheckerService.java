@@ -138,6 +138,11 @@ public class ConnectorCheckerService {
                 return checkCmis(config);
             }
 
+            // --- Hyland OpenArch (Repository & Output) Connector ---
+            if (className.contains("OpenArch") || className.contains("openarch")) {
+                return checkOpenArch(config);
+            }
+
             // --- FileSystem Repository Connector ---
             if (className.contains("FileConnector") || className.contains("FileSystem")) {
                 return checkFileSystem(config);
@@ -562,6 +567,47 @@ public class ConnectorCheckerService {
             }
         } catch (Exception e) {
             return new ConnectionCheckResult(false, "Failed to connect to CMIS endpoint at " + endpointUrl + ": " + e.getMessage(), e.toString());
+        }
+    }
+
+    private ConnectionCheckResult checkOpenArch(Map<String, String> config) {
+        String endpointUrl = config.getOrDefault("endpointUrl",
+                config.getOrDefault("url", "http://localhost:8080"));
+        if (endpointUrl.endsWith("/")) {
+            endpointUrl = endpointUrl.substring(0, endpointUrl.length() - 1);
+        }
+        String repoId = config.getOrDefault("repositoryId", "default");
+        String user = config.getOrDefault("username", "Administrator");
+        String pass = config.getOrDefault("password", "Administrator");
+
+        try {
+            HttpClient client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
+            URI uri = URI.create(endpointUrl + "/api/query");
+            String queryJson = "{\"repositoryId\":\"" + repoId + "\",\"query\":\"SELECT * FROM SysContent\",\"limit\":1}";
+
+            HttpRequest.Builder reqBuilder = HttpRequest.newBuilder()
+                    .uri(uri)
+                    .timeout(Duration.ofSeconds(5))
+                    .header("Accept", "application/json")
+                    .header("Content-Type", "application/json")
+                    .header("X-HXCS-Repository", repoId)
+                    .POST(HttpRequest.BodyPublishers.ofString(queryJson));
+
+            if (user != null && !user.isBlank()) {
+                String credentials = Base64.getEncoder().encodeToString((user + ":" + pass).getBytes(StandardCharsets.UTF_8));
+                reqBuilder.header("Authorization", "Basic " + credentials);
+            }
+
+            HttpResponse<String> response = client.send(reqBuilder.build(), HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() >= 200 && response.statusCode() < 300) {
+                return new ConnectionCheckResult(true, "Successfully connected to Hyland OpenArch endpoint at " + endpointUrl + " (Repository: " + repoId + ").", response.body());
+            } else if (response.statusCode() == 404) {
+                return new ConnectionCheckResult(true, "Hyland OpenArch server reachable at " + endpointUrl + ", endpoint returned 404.", response.body());
+            } else {
+                return new ConnectionCheckResult(false, "Hyland OpenArch returned HTTP status " + response.statusCode() + " from " + endpointUrl, response.body());
+            }
+        } catch (Exception e) {
+            return new ConnectionCheckResult(false, "Failed to connect to Hyland OpenArch at " + endpointUrl + ": " + e.getMessage(), e.toString());
         }
     }
 
