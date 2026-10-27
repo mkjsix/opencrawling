@@ -188,6 +188,63 @@ class ConnectorCheckerServiceTest {
             assertTrue(wrongLibrary.message().contains("[Contracts]"));
         } finally {
             graph.stop(0);
+    void testCheckMFilesConnectorNotConfigured() {
+        ConnectorDTO connector = new ConnectorDTO("MFiles_Test", "Test M-Files", "repository",
+                "org.opencrawling.mfiles.MFilesRepositoryConnector", 10, Map.of("url", "http://127.0.0.1:59999/REST"));
+
+        ConnectionCheckResult result = checker.check(connector);
+        assertFalse(result.success());
+        assertTrue(result.message().contains("vault-guid"));
+    }
+
+    @Test
+    void testCheckMFilesConnectorFailure() {
+        ConnectorDTO connector = new ConnectorDTO("MFiles_Test", "Test M-Files", "repository",
+                "org.opencrawling.mfiles.MFilesRepositoryConnector", 10, Map.of("url", "http://127.0.0.1:59999/REST",
+                        "vaultGuid", "{C0B3B52E-6512-4BD8-8F2B-2A8E9A349201}", "username", "crawler", "password", "secret"));
+
+        ConnectionCheckResult result = checker.check(connector);
+        assertFalse(result.success());
+        assertTrue(result.message().contains("Failed to connect to M-Files"));
+        assertFalse(result.message().contains("secret"));
+    }
+
+    @Test
+    void testCheckMFilesConnectorSuccess() throws Exception {
+        List<String> requests = new CopyOnWriteArrayList<>();
+        HttpServer mfws = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        mfws.createContext("/REST/", exchange -> {
+            String key = exchange.getRequestMethod() + " " + exchange.getRequestURI().getPath();
+            requests.add(key);
+            String body = switch (key) {
+                case "POST /REST/server/authenticationtokens" -> "{\"Value\":\"tok\"}";
+                case "GET /REST/session/vault" -> "{\"Name\":\"Contracts\",\"GUID\":\"{C0B3B52E-6512-4BD8-8F2B-2A8E9A349201}\"}";
+                case "GET /REST/structure/objecttypes" -> "[{\"ID\":0,\"Name\":\"Document\"}]";
+                default -> null;
+            };
+            if (body == null) {
+                exchange.sendResponseHeaders(key.startsWith("DELETE") ? 204 : 404, -1);
+            } else {
+                byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
+                exchange.getResponseHeaders().add("Content-Type", "application/json");
+                exchange.sendResponseHeaders(200, bytes.length);
+                exchange.getResponseBody().write(bytes);
+            }
+            exchange.close();
+        });
+        mfws.start();
+        try {
+            ConnectorDTO connector = new ConnectorDTO("MFiles_Test", "Test M-Files", "repository",
+                    "org.opencrawling.mfiles.MFilesRepositoryConnector", 10, Map.of(
+                            "url", "http://127.0.0.1:" + mfws.getAddress().getPort() + "/REST",
+                            "vaultGuid", "C0B3B52E-6512-4BD8-8F2B-2A8E9A349201", "username", "crawler", "password", "secret"));
+
+            ConnectionCheckResult result = checker.check(connector);
+            assertTrue(result.success(), result.message());
+            assertTrue(result.message().contains("vault 'Contracts' is accessible (1 object types)"));
+            assertTrue(requests.contains("DELETE /REST/session"), "the check ends its session");
+        } finally {
+            mfws.stop(0);
         }
     }
 }

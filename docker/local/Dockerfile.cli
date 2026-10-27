@@ -36,10 +36,13 @@ COPY oc-aps-repository-connector/pom.xml oc-aps-repository-connector/
 COPY oc-cmis-repository-connector/pom.xml oc-cmis-repository-connector/
 COPY oc-doxis-repository-connector/pom.xml oc-doxis-repository-connector/
 COPY oc-sharepoint-repository-connector/pom.xml oc-sharepoint-repository-connector/
+COPY oc-mfiles-repository-connector/pom.xml oc-mfiles-repository-connector/
 COPY oc-jdbc-repository-connector/pom.xml oc-jdbc-repository-connector/
 COPY oc-stormcrawler-bolt/pom.xml oc-stormcrawler-bolt/
 COPY oc-stormcrawler-repository-connector/pom.xml oc-stormcrawler-repository-connector/
 COPY oc-grpc-push-connector/pom.xml oc-grpc-push-connector/
+COPY oc-openarch-output-connector/pom.xml oc-openarch-output-connector/
+COPY oc-openarch-repository-connector/pom.xml oc-openarch-repository-connector/
 COPY oc-vector-output-connector/pom.xml oc-vector-output-connector/
 COPY oc-milvus-output-connector/pom.xml oc-milvus-output-connector/
 COPY oc-opensearch2-output-connector/pom.xml oc-opensearch2-output-connector/

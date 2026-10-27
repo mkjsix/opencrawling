@@ -318,6 +318,12 @@ public class JobController {
                         log.info("Successfully resolved dynamic SharePoint repository connector for '{}' ({} mode)",
                                 sharePointSettings.siteUrl() != null ? sharePointSettings.siteUrl() : sharePointSettings.siteId(),
                                 sharePointSettings.crawlMode());
+                    } else if (connConfig.className().contains("MFilesRepositoryConnector")) {
+                        org.opencrawling.mfiles.MFilesProperties mfilesSettings =
+                                org.opencrawling.mfiles.MFilesProperties.fromConfiguration(connConfig.configuration());
+                        resolvedConnector = new org.opencrawling.mfiles.MFilesRepositoryConnector(mfilesSettings);
+                        log.info("Successfully resolved dynamic M-Files repository connector for '{}' (vault '{}', {} mode)",
+                                mfilesSettings.url(), mfilesSettings.vaultGuid(), mfilesSettings.crawlMode());
                     } else if (connConfig.className().contains("Jdbc")) {
                         String url = connConfig.configuration().getOrDefault("url", "jdbc:h2:mem:opencrawling;DB_CLOSE_DELAY=-1");
                         String driverClassName = connConfig.configuration().getOrDefault("driverClassName", connConfig.configuration().getOrDefault("driver-class-name", ""));

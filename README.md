@@ -19,6 +19,7 @@
 [![Alfresco](https://img.shields.io/badge/Alfresco_Content_Services-Supported-0090DF.svg?style=flat&logo=alfresco&logoColor=white)](https://www.alfresco.com/)
 [![Alfresco Process Services](https://img.shields.io/badge/Alfresco_Process_Services-26.2.0-0090DF.svg?style=flat&logo=alfresco&logoColor=white)](https://www.alfresco.com/)
 [![OASIS CMIS](https://img.shields.io/badge/OASIS_CMIS-1.0%20%7C%201.1-0052CC.svg?style=flat)](https://www.oasis-open.org/committees/cmis/)
+[![Hyland OpenArch](https://img.shields.io/badge/Hyland_OpenArch-Supported-4F46E5.svg?style=flat)](docs/Hyland-OpenArch-Integration.md)
 [![Flowable](https://img.shields.io/badge/Flowable_BPMN-Supported-007ACC.svg?style=flat&logo=flowable&logoColor=white)](https://www.flowable.com/)
 [![Camunda](https://img.shields.io/badge/Camunda_BPM-Supported-E10076.svg?style=flat&logo=camunda&logoColor=white)](https://camunda.com/)
 [![Apache StormCrawler](https://img.shields.io/badge/Apache_StormCrawler-3.7.0-007396.svg?style=flat&logo=apache&logoColor=white)](https://stormcrawler.apache.org/)
@@ -76,6 +77,8 @@ graph TD
         CMIS_Conn[OASIS CMIS Repository - oc-cmis-repository-connector]
         Doxis_Repo_Conn[Doxis 4 Repository - oc-doxis-repository-connector]
         SharePoint_Conn[SharePoint Online Repository - oc-sharepoint-repository-connector]
+        MFiles_Repo_Conn[M-Files Vault - oc-mfiles-repository-connector]
+        OpenArch_Repo_Conn[Hyland OpenArch Repository - oc-openarch-repository-connector]
         Iceberg_Conn[Iceberg Repository - oc-iceberg-repository-connector]
         Flowable_Conn[Flowable Repository - oc-flowable-repository-connector]
         Camunda_Conn[Camunda Repository - oc-camunda-repository-connector]
@@ -88,7 +91,7 @@ graph TD
         
         Writer_Cons[Vector Store Writer - VectorStoreWriterConsumer]
         Precompute_Model[PrecomputedEmbeddingModel]
-        Vec_Conn[Vector Stores & Fan-Out: pgvector / Solr 10 / Vespa / Qdrant / Milvus / OpenSearch / Luxir / Apache SeaTunnel]
+        Vec_Conn[Vector Stores & Fan-Out: pgvector / Solr 10 / Vespa / Qdrant / Milvus / OpenSearch / Luxir / OpenArch / Apache SeaTunnel]
 
         McpServer[Secure MCP Server - McpVectorServer]
         
@@ -511,7 +514,8 @@ docker compose -f docker/docker-compose.dist.yml -f docker/docker-compose.overri
 - **Apache Ozone 2.2.0**: High-performance distributed object store offloading large document payloads with dual client strategy:
   - **Native Ozone Client (`ofs` / `o3fs`)**: Direct gRPC/RPC transport to DataNodes & Ozone Manager (OM) for maximum throughput.
   - **S3 Gateway Client (`s3g`)**: Standard AWS S3 SDK integration hitting Ozone's S3 Gateway endpoint for maximum cloud versatility.
-- **Repository Connectors**: Multi-source connectors for Filesystem, Alfresco Content Services (ACS), **Alfresco Process Services (APS)**, **OASIS CMIS (1.0/1.1)**, **Doxis 4 (CSB REST)**, **SharePoint Online (Microsoft Graph)**, Apache Iceberg, Flowable BPMN, Camunda, Apache StormCrawler, and **gRPC Push Ingestion Gateway**.
+- **Repository Connectors**: Multi-source connectors for Filesystem, Alfresco Content Services (ACS), **Alfresco Process Services (APS)**, **OASIS CMIS (1.0/1.1)**, **Doxis 4 (CSB REST)**, **SharePoint Online (Microsoft Graph)**, **Hyland OpenArch**, Apache Iceberg, Flowable BPMN, Camunda, Apache StormCrawler, and **gRPC Push Ingestion Gateway**.
+- **Hyland OpenArch & Parquet Vector Bridging**: Native bidirectional integration supporting paged HXQL harvesting, binary blob offloading via Java 25 Virtual Threads, Parquet vector serialization (`embedding.avsc`), Zero-Trust ACL preservation, and MCP search/fetch tools (`openarch_search`, `openarch_fetch_document`).
 - **pgvector**: High-dimensional vector similarity search in PostgreSQL.
 - **Milvus**: High-performance, distributed vector database for large-scale enterprise vector indexing.
 - **Qdrant**: Rust-based vector search engine with payload-indexed ACL pre-filtering and optional scalar/binary quantization.
@@ -995,6 +999,18 @@ We provide fully automated end-to-end integration test scripts that build, boot,
     ./scripts/test-mcp-decoupled.sh
     ```
     This script tests the entire Secure MCP Server capabilities in decoupled deployment mode, validating Streamable HTTP transport handshakes (JSON-RPC 2.0 initialize, session negotiation, ping), tool discovery (`tools/list`), AIOps observability tools (`fetchJobTraces`, `getErrorLogs`, `queryThroughputMetrics`), Zero-Trust ACL evaluation (`secureVectorSearch`) with explicit deny precedence, document content retrieval (`getDocumentContent`), accessible sources cataloging (`listAccessibleSources`), multi-dimension querying, and OIS tombstone deletions.
+
+*   **Hyland OpenArch Integration Test Suite**:
+    ```bash
+    ./scripts/test-openarch-integration.sh
+    ```
+    This script verifies bidirectional OpenArch harvesting, Parquet vector bridging conforming to `embedding.avsc`, Zero-Trust ACL preservation, and MCP search/fetch backend tools.
+
+*   **Hyland OpenArch Decoupled Pipeline**:
+    ```bash
+    ./scripts/test-openarch-decoupled.sh
+    ```
+    This script tests the entire decoupled architecture with Hyland OpenArch, validating document ingestion, Parquet vector bridging conforming to `embedding.avsc`, Kafka consumers (`oc-crawler`, `oc-ingestion-consumer`, `oc-embedding-consumer`, `oc-writer-consumer`), paged HXQL harvesting with Java 25 Virtual Threads, Secure MCP Server endpoints (`openarch_search`, `openarch_fetch_document`), and OIS tombstone deletions.
 
 *   **OpenCrawling CLI (oc) Integration Test Suites**:
     ```bash

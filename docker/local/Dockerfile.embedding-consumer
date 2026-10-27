@@ -47,10 +47,13 @@ COPY oc-aps-repository-connector/pom.xml oc-aps-repository-connector/
 COPY oc-cmis-repository-connector/pom.xml oc-cmis-repository-connector/
 COPY oc-doxis-repository-connector/pom.xml oc-doxis-repository-connector/
 COPY oc-sharepoint-repository-connector/pom.xml oc-sharepoint-repository-connector/
+COPY oc-mfiles-repository-connector/pom.xml oc-mfiles-repository-connector/
 COPY oc-jdbc-repository-connector/pom.xml oc-jdbc-repository-connector/
 COPY oc-stormcrawler-bolt/pom.xml oc-stormcrawler-bolt/
 COPY oc-stormcrawler-repository-connector/pom.xml oc-stormcrawler-repository-connector/
 COPY oc-grpc-push-connector/pom.xml oc-grpc-push-connector/
+COPY oc-openarch-output-connector/pom.xml oc-openarch-output-connector/
+COPY oc-openarch-repository-connector/pom.xml oc-openarch-repository-connector/
 COPY oc-admin-ui/pom.xml oc-admin-ui/
 COPY oc-runtime/pom.xml oc-runtime/
 COPY oc-embedding-service/pom.xml oc-embedding-service/
@@ -86,10 +89,13 @@ COPY oc-aps-repository-connector/src/ /app/oc-aps-repository-connector/src/
 COPY oc-cmis-repository-connector/src/ /app/oc-cmis-repository-connector/src/
 COPY oc-doxis-repository-connector/src/ /app/oc-doxis-repository-connector/src/
 COPY oc-sharepoint-repository-connector/src/ /app/oc-sharepoint-repository-connector/src/
+COPY oc-mfiles-repository-connector/src/ /app/oc-mfiles-repository-connector/src/
 COPY oc-jdbc-repository-connector/src/ /app/oc-jdbc-repository-connector/src/
 COPY oc-stormcrawler-bolt/src/ /app/oc-stormcrawler-bolt/src/
 COPY oc-stormcrawler-repository-connector/src/ /app/oc-stormcrawler-repository-connector/src/
 COPY oc-grpc-push-connector/src/ /app/oc-grpc-push-connector/src/
+COPY oc-openarch-output-connector/src/ /app/oc-openarch-output-connector/src/
+COPY oc-openarch-repository-connector/src/ /app/oc-openarch-repository-connector/src/
 COPY oc-admin-ui/src/ /app/oc-admin-ui/src/
 COPY oc-admin-ui/package.json oc-admin-ui/package-lock.json oc-admin-ui/postcss.config.js oc-admin-ui/tailwind.config.js oc-admin-ui/tsconfig.json oc-admin-ui/tsconfig.node.json oc-admin-ui/vite.config.ts oc-admin-ui/index.html /app/oc-admin-ui/
 COPY oc-runtime/src/ /app/oc-runtime/src/

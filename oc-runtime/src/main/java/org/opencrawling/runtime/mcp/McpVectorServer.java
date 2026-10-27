@@ -131,6 +131,27 @@ public class McpVectorServer {
         return backend.listAccessibleSources(userPrincipal, rolesList, dimensions);
     }
 
+    @McpTool(description = "Search Hyland OpenArch federated enterprise content layer using semantic vector search and Zero-Trust permissions.")
+    public List<DocumentSearchResult> openarch_search(
+            @McpToolParam(description = "Natural language or keyword query", required = true) String query,
+            @McpToolParam(description = "The caller user identity", required = true) String userPrincipal,
+            @McpToolParam(description = "Comma-separated caller roles or groups", required = false) String userRoles,
+            @McpToolParam(description = "Maximum matching results", required = false) Integer maxResults,
+            @McpToolParam(description = "Minimum score threshold", required = false) Double minScore
+    ) {
+        return secureVectorSearch(query, userPrincipal, userRoles, maxResults, minScore, null);
+    }
+
+    @McpTool(description = "Fetch full document context and metadata from Hyland OpenArch federated repository.")
+    public DocumentDetailsResult openarch_fetch_document(
+            @McpToolParam(description = "The document ID or URI in OpenArch", required = true) String documentId,
+            @McpToolParam(description = "The caller user identity", required = true) String userPrincipal,
+            @McpToolParam(description = "Comma-separated caller roles or groups", required = false) String userRoles
+    ) {
+        String uri = documentId.startsWith("openarch://") ? documentId : "openarch://default/" + documentId;
+        return getDocumentContent(uri, userPrincipal, userRoles, null);
+    }
+
     public List<DocumentSearchResult> secureVectorSearch(
             String query,
             String userPrincipal,

@@ -37,6 +37,9 @@ import org.opencrawling.doxis.client.DoxisClient;
 import org.opencrawling.sharepoint.GraphClient;
 import org.opencrawling.sharepoint.SharePointProperties;
 import org.opencrawling.sharepoint.SharePointRepositoryConnector;
+import org.opencrawling.mfiles.MFilesClient;
+import org.opencrawling.mfiles.MFilesProperties;
+import org.opencrawling.mfiles.MFilesRepositoryConnector;
 import org.opencrawling.runtime.api.ConnectorController.ConnectorDTO;
 import org.springframework.stereotype.Service;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -131,11 +134,19 @@ public class ConnectorCheckerService {
             // --- SharePoint Repository Connector ---
             if (className.contains("SharePointRepositoryConnector")) {
                 return checkSharePointRepository(config);
+            // --- M-Files Repository Connector ---
+            if (className.contains("MFilesRepositoryConnector")) {
+                return checkMFilesRepository(config);
             }
 
             // --- CMIS Repository Connector ---
             if (className.contains("CmisRepositoryConnector") || className.contains("Cmis") || className.contains("cmis")) {
                 return checkCmis(config);
+            }
+
+            // --- Hyland OpenArch (Repository & Output) Connector ---
+            if (className.contains("OpenArch") || className.contains("openarch")) {
+                return checkOpenArch(config);
             }
 
             // --- FileSystem Repository Connector ---
@@ -535,12 +546,29 @@ public class ConnectorCheckerService {
             return new ConnectionCheckResult(true, "Successfully authenticated to Microsoft Graph; SharePoint site '"
                     + site.path("displayName").asText(site.path("webUrl").asText()) + "' is accessible with " + libraries.size()
                     + " document libraries " + libraries + ".", site.path("id").asText(null));
+     * Logs in (vault-scoped token, credential headers or bearer), reads the session's vault and lists its object types: a
+     * vault-level call, so an anonymous or server-level token fails here instead of on the first crawl.
+     */
+    private ConnectionCheckResult checkMFilesRepository(Map<String, String> config) {
+        MFilesProperties settings = MFilesProperties.fromConfiguration(config);
+        List<String> problems = settings.validate();
+        if (!problems.isEmpty()) {
+            return new ConnectionCheckResult(false, "M-Files repository connector is not configured: " + String.join(" ", problems)
+                    + " " + MFilesRepositoryConnector.LICENCE_NOTICE, null);
+        }
+        try (MFilesClient client = MFilesRepositoryConnector.newClient(settings, Duration.ofSeconds(30), 0)) {
+            client.login();
+            JsonNode vault = client.getVault();
+            int objectTypes = MFilesClient.items(client.getObjectTypes()).size();
+            return new ConnectionCheckResult(true, "Successfully authenticated to M-Files at " + client.getBaseUrl() + "; vault '"
+                    + vault.path("Name").asText(settings.vaultGuid()) + "' is accessible (" + objectTypes + " object types). "
+                    + MFilesRepositoryConnector.LICENCE_NOTICE, vault.path("GUID").asText(null));
         } catch (Exception e) {
             if (e instanceof InterruptedException) {
                 Thread.currentThread().interrupt();
             }
-            return new ConnectionCheckResult(false, "Failed to connect to SharePoint through " + settings.graphUrl() + ": "
-                    + e.getMessage() + " " + SharePointRepositoryConnector.PREREQUISITES_NOTICE, e.toString());
+            return new ConnectionCheckResult(false, "Failed to connect to M-Files at " + settings.url() + ": " + e.getMessage() + " "
+                    + MFilesRepositoryConnector.LICENCE_NOTICE, e.toString());
         }
     }
 
@@ -571,6 +599,47 @@ public class ConnectorCheckerService {
             }
         } catch (Exception e) {
             return new ConnectionCheckResult(false, "Failed to connect to CMIS endpoint at " + endpointUrl + ": " + e.getMessage(), e.toString());
+        }
+    }
+
+    private ConnectionCheckResult checkOpenArch(Map<String, String> config) {
+        String endpointUrl = config.getOrDefault("endpointUrl",
+                config.getOrDefault("url", "http://localhost:8080"));
+        if (endpointUrl.endsWith("/")) {
+            endpointUrl = endpointUrl.substring(0, endpointUrl.length() - 1);
+        }
+        String repoId = config.getOrDefault("repositoryId", "default");
+        String user = config.getOrDefault("username", "Administrator");
+        String pass = config.getOrDefault("password", "Administrator");
+
+        try {
+            HttpClient client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
+            URI uri = URI.create(endpointUrl + "/api/query");
+            String queryJson = "{\"repositoryId\":\"" + repoId + "\",\"query\":\"SELECT * FROM SysContent\",\"limit\":1}";
+
+            HttpRequest.Builder reqBuilder = HttpRequest.newBuilder()
+                    .uri(uri)
+                    .timeout(Duration.ofSeconds(5))
+                    .header("Accept", "application/json")
+                    .header("Content-Type", "application/json")
+                    .header("X-HXCS-Repository", repoId)
+                    .POST(HttpRequest.BodyPublishers.ofString(queryJson));
+
+            if (user != null && !user.isBlank()) {
+                String credentials = Base64.getEncoder().encodeToString((user + ":" + pass).getBytes(StandardCharsets.UTF_8));
+                reqBuilder.header("Authorization", "Basic " + credentials);
+            }
+
+            HttpResponse<String> response = client.send(reqBuilder.build(), HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() >= 200 && response.statusCode() < 300) {
+                return new ConnectionCheckResult(true, "Successfully connected to Hyland OpenArch endpoint at " + endpointUrl + " (Repository: " + repoId + ").", response.body());
+            } else if (response.statusCode() == 404) {
+                return new ConnectionCheckResult(true, "Hyland OpenArch server reachable at " + endpointUrl + ", endpoint returned 404.", response.body());
+            } else {
+                return new ConnectionCheckResult(false, "Hyland OpenArch returned HTTP status " + response.statusCode() + " from " + endpointUrl, response.body());
+            }
+        } catch (Exception e) {
+            return new ConnectionCheckResult(false, "Failed to connect to Hyland OpenArch at " + endpointUrl + ": " + e.getMessage(), e.toString());
         }
     }
 

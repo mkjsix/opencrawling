@@ -159,6 +159,32 @@ public class ConnectorController {
             Map.entry("parallelism", "4"),
             Map.entry("maxRetries", "5"),
             Map.entry("timeoutSeconds", "30")
+        defaults.add(new ConnectorDTO("MFiles_Repository", "M-Files Vault (M-Files Web Service REST API)", "repository", "org.opencrawling.mfiles.MFilesRepositoryConnector", 10, Map.ofEntries(
+            Map.entry("url", "https://localhost/REST"),
+            Map.entry("vaultGuid", ""),
+            Map.entry("authType", "token"),
+            Map.entry("username", ""),
+            Map.entry("password", ""),
+            Map.entry("domain", ""),
+            Map.entry("crawlMode", "search"),
+            Map.entry("objectType", "0"),
+            Map.entry("classIds", ""),
+            Map.entry("viewId", ""),
+            Map.entry("searchQuery", ""),
+            Map.entry("versionMode", "latest_only"),
+            Map.entry("includeFiles", "true"),
+            Map.entry("maxFileSizeBytes", "52428800"),
+            Map.entry("includeProperties", "true"),
+            Map.entry("includeAcls", "true"),
+            Map.entry("fallbackPrincipals", ""),
+            Map.entry("principalFormat", "token"),
+            Map.entry("emitDeletes", "true"),
+            Map.entry("incrementalEnabled", "false"),
+            Map.entry("modifiedAfter", ""),
+            Map.entry("batchSize", "500"),
+            Map.entry("parallelism", "4"),
+            Map.entry("timeoutSeconds", "30"),
+            Map.entry("stateDirectory", "data/mfiles-state")
         )));
         defaults.add(new ConnectorDTO("Grpc_Push_Connector", "gRPC Push Streaming Ingestion", "repository", "org.opencrawling.push.grpc.GrpcPushRepositoryConnector", 100, Map.of(
             "port", "9096",
@@ -167,6 +193,20 @@ public class ConnectorController {
             "token", "",
             "tlsEnabled", "false",
             "clientAuth", "NONE"
+        )));
+        defaults.add(new ConnectorDTO("OpenArch_Repository", "Hyland OpenArch Federated Repository", "repository", "org.opencrawling.openarch.repository.OpenArchRepositoryConnector", 10, Map.ofEntries(
+            Map.entry("endpointUrl", "http://localhost:8080"),
+            Map.entry("repositoryId", "default"),
+            Map.entry("username", "Administrator"),
+            Map.entry("password", "Administrator"),
+            Map.entry("crawlMode", "QUERY"),
+            Map.entry("hxqlQuery", "SELECT * FROM SysFile"),
+            Map.entry("rootFolderId", "00000000-0000-0000-0000-000000000000"),
+            Map.entry("includeSubfolders", "true"),
+            Map.entry("batchSize", "100"),
+            Map.entry("includeAcls", "true"),
+            Map.entry("includeContentStream", "true"),
+            Map.entry("incremental", "false")
         )));
         defaults.add(new ConnectorDTO("PGVector_Output", "PGVector Store", "output", "org.opencrawling.vector.VectorOutputConnector", 10, Map.of(
             "pgVectorUrl", "jdbc:postgresql://127.0.0.1:5432/opencrawling",
@@ -253,6 +293,19 @@ public class ConnectorController {
             "s3Endpoint", "http://localhost:9878",
             "keyStrategy", "HIERARCHICAL",
             "tombstoneAction", "DELETE_KEY"
+        )));
+        defaults.add(new ConnectorDTO("OpenArch_Output", "Hyland OpenArch Federated Ingestion & Parquet Vector Bridge", "output", "org.opencrawling.openarch.output.OpenArchOutputConnector", 10, Map.ofEntries(
+            Map.entry("endpointUrl", "http://localhost:8080"),
+            Map.entry("repositoryId", "default"),
+            Map.entry("username", "Administrator"),
+            Map.entry("password", "Administrator"),
+            Map.entry("rootFolderId", "00000000-0000-0000-0000-000000000000"),
+            Map.entry("parquetBatchThreshold", "50"),
+            Map.entry("embeddingsType", "mxbai-embed-large"),
+            Map.entry("dimensions", "1024"),
+            Map.entry("upsert", "true"),
+            Map.entry("syncAcls", "true"),
+            Map.entry("uploadBinaries", "true")
         )));
         defaults.add(new ConnectorDTO("Ollama_Embedding_Default", "Local Ollama Embeddings using mxbai-embed-large", "transformation", "org.opencrawling.embedding.OllamaEmbeddingConnector", 10, Map.of("baseUrl", "http://localhost:11434", "engine", "ollama", "model", "mxbai-embed-large")));
         defaults.add(new ConnectorDTO("OpenAI_Embedding_Prod", "Production OpenAI Embeddings", "transformation", "org.opencrawling.embedding.OpenAIEmbeddingConnector", 10, Map.of("engine", "openai", "model", "text-embedding-3-small", "apiKey", "sk-placeholder")));
